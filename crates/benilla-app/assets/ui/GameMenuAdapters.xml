@@ -41,21 +41,30 @@
         -- Literal: 1.12 has no GAMEMENU_OPTIONS; its OPTIONS_MENU is "Options Menu".
         GameMenuButtonOptions:SetText("Options")
         GameMenuButtonOptions:ClearAllPoints()
-        GameMenuButtonOptions:SetPoint("TOP", GameMenuFrame, "TOP", 0, -32)
+        -- Turtle WoW's menu opens on its Shop rung and ships this one hidden, folded under its
+        -- own combined options: ours hangs under the Shop with Turtle's 16 gap, and shows.
+        if GameMenuButtonShop then
+            GameMenuFrame:SetHeight(267 + GameMenuButtonShop:GetHeight() + 16)
+            GameMenuButtonOptions:SetPoint("TOP", GameMenuButtonShop, "BOTTOM", 0, -16)
+        else
+            GameMenuButtonOptions:SetPoint("TOP", GameMenuFrame, "TOP", 0, -32)
+        end
+        GameMenuButtonOptions:Show()
         GameMenuButtonOptions:SetScript("OnClick", function()
             PlaySound("igMainMenuOption")
             HideUIPanel(GameMenuFrame)
             ShowUIPanel(BenillaOptionsFrame)
         end)
 
-        for _, fold in ipairs({
-            { GameMenuButtonSoundOptions, GameMenuButtonOptions },
-            { GameMenuButtonUIOptions, GameMenuButtonSoundOptions },
-        }) do
-            local button, above = fold[1], fold[2]
-            button:Hide()
-            button:ClearAllPoints()
-            button:SetPoint("TOP", above, "BOTTOM", 0, button:GetHeight())
+        -- Turtle WoW has no Sound rung, so the fold skips what the menu lacks.
+        local above = GameMenuButtonOptions
+        for _, button in ipairs({ GameMenuButtonSoundOptions or false, GameMenuButtonUIOptions }) do
+            if button then
+                button:Hide()
+                button:ClearAllPoints()
+                button:SetPoint("TOP", above, "BOTTOM", 0, button:GetHeight())
+                above = button
+            end
         end
         -- Key Bindings keeps its stock anchor, 1 under UI Options: the era rungs hang from its
         -- top, so an addon that inserts a button above it and re-anchors it under that button
