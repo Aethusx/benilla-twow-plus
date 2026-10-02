@@ -1202,20 +1202,15 @@ fn a_clean_world_entry_raises_only_the_warnings_we_have_named() {
         .get_non_send_resource::<benilla_ui::script::UiScript>()
         .expect("VM");
 
-    // Deviation: the `OnInputLanguageChanged` script slot (`ChatFrame.xml:121`, the IME language
-    // indicator) is refused, because benilla has no IME to fire it.
-    const KNOWN: [&str; 1] = ["OnInputLanguageChanged"];
-
     let unexpected: Vec<String> = script
         .diagnostics()
         .into_iter()
         .filter(|d| d.kind == benilla_ui::script::diagnostics::DiagnosticKind::Warning)
         .map(|d| d.message)
-        .filter(|m| !KNOWN.iter().any(|k| m.contains(k)))
         .collect();
     assert!(
         unexpected.is_empty(),
-        "a stock world entry warned about something new — fix it or name it here: {unexpected:#?}"
+        "a stock world entry warned: {unexpected:#?}"
     );
 }
 

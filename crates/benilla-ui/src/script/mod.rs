@@ -399,7 +399,7 @@ pub const SCREEN: crate::layout::Handle = 0;
 /// ScrollFrame's three scroll kinds are `+0x32c`/`+0x334`/`+0x33c` (script-name map `0x786c40`).
 /// The EditBox's vtable (`0x81c910`) replaces the key and char slots: an EditBox never fires
 /// `OnKeyDown`, and fires `OnChar` only from `Insert`, with the inserted text (`0x77c13c`).
-const SCRIPT_KINDS: [&str; 39] = [
+const SCRIPT_KINDS: [&str; 40] = [
     "OnLoad",
     "OnEvent",
     "OnUpdate",
@@ -428,6 +428,10 @@ const SCRIPT_KINDS: [&str; 39] = [
     "OnCursorChanged",
     "OnEditFocusGained",
     "OnEditFocusLost",
+    // The EditBox's input-method slot: accepted on every 1.12 client, fired only where an input
+    // method can switch, which this one never does (`GetInputLanguage` is "ROMAN" forever). Turtle's
+    // `ChatFrameEditBoxTemplate` declares it and calls the handler itself from `ChatEdit_OnShow`.
+    "OnInputLanguageChanged",
     "OnHorizontalScroll",
     "OnVerticalScroll",
     "OnScrollRangeChanged",

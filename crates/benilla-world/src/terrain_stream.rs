@@ -83,6 +83,8 @@ pub struct TerrainStreamer {
     settled: bool,
     /// The off-grid focus tile last warned about, so the warning fires once per tile.
     off_grid_reported: Option<(i32, i32)>,
+    /// The last map id Map.dbc does not name, warned once per map.
+    unknown_map: Option<u32>,
 }
 
 /// The map-global WMO's placement id: a WMO-only map has no ADT uniqueIds to collide with, and
@@ -490,6 +492,35 @@ fn stream_terrain(
     let placements = placements.into_inner();
     let map_id = focus.map(current_map.map(|m| m.0));
     let Some(dir) = map_catalog.0.directory(map_id).map(str::to_string) else {
+        // A server map the chain's Map.dbc lacks, as a Turtle server sends to a client whose data
+        // predates the map: there is no world to stream, so the residency is vacuous (ground that
+        // is not there counts as resident) and the loading cover clears onto the empty map.
+        if state.unknown_map != Some(map_id) {
+            warn!("terrain: map {map_id} has no Map.dbc row — nothing to stream");
+            state.unknown_map = Some(map_id);
+        }
+        if state.map_dir.is_some() || !state.tiles.is_empty() {
+            drop_streamed_world(
+                &mut commands,
+                &mut state,
+                placements,
+                &mut welds,
+                &mut static_merge,
+                staticgx.as_deref_mut(),
+                &mut activity,
+            );
+            state.map_dir = None;
+        }
+        if let Some(p) = load_progress.as_mut() {
+            let center = focus.resolve(camera.single().ok().map(|c| c.translation));
+            p.total = 1;
+            p.ready = 1;
+            // The tile the settle release matches against the avatar's, as the publish below.
+            p.focus_tile = Some(StreamWindow::at(view.farclip, center[0], center[1]).focus_tile());
+            p.focus_resident = true;
+            p.scene_ready = true;
+            p.placements_pending = 0;
+        }
         return;
     };
 

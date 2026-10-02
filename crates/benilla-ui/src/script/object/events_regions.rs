@@ -212,8 +212,9 @@ pub(super) fn install(lua: &Lua, m: &Table) -> mlua::Result<()> {
 
 /// `SetScript(name, func)`: stores the closure under one of [`SCRIPT_KINDS`], else raises.
 /// Deviation: real 1.12 kinds nothing fires yet raise too (`OnHyperlinkEnter`, `OnHyperlinkLeave`,
-/// `OnMessageScrollChanged`, `OnInputLanguageChanged`, the movie frame's), because an accepted
-/// handler that never runs fails silently. `OnAttributeChanged` is 2.0's, with no 1.12 slot.
+/// `OnMessageScrollChanged`, the movie frame's), because an accepted handler that never runs fails
+/// silently. `OnInputLanguageChanged` is accepted and never fired, the reference's own behaviour on
+/// a client with no input-method switch. `OnAttributeChanged` is 2.0's, with no 1.12 slot.
 fn set_script(lua: &Lua, this: &Table, name: &str, func: Option<Function>) -> mlua::Result<()> {
     let kind = SCRIPT_KINDS
         .iter()

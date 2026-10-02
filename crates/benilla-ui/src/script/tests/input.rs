@@ -571,7 +571,6 @@ fn the_unfired_script_kinds_still_raise_rather_than_silently_accepting() {
         // Real 1.12 slots that benilla does not fire.
         "OnHyperlinkEnter",
         "OnMessageScrollChanged",
-        "OnInputLanguageChanged",
     ] {
         let err = s
             .run(&format!(r#"Raiser:SetScript("{name}", function() end)"#))
@@ -581,6 +580,18 @@ fn the_unfired_script_kinds_still_raise_rather_than_silently_accepting() {
             "{name} must raise by name, got {err}"
         );
     }
+}
+
+/// The EditBox's input-method slot is accepted and never fired, as on a 1.12 client with no input
+/// method to switch; stock and Turtle `ChatFrame.xml` both declare it.
+#[test]
+fn the_input_language_slot_is_accepted() {
+    let s = script();
+    s.run(
+        r#"Box = CreateFrame("EditBox", "LangBox")
+        Box:SetScript("OnInputLanguageChanged", function() end)"#,
+    )
+    .unwrap();
 }
 
 /// Hiding the hovered frame fires its `OnLeave` inside the hide, before its `OnHide` (`0x764ba0`'s

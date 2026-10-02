@@ -8,7 +8,7 @@
 //! and restarts on its next trigger; the reference mutes it past the cutoff and restarts it on
 //! re-entry itself (`0x7a5095`, `0x7a51a2`).
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use anyhow::{anyhow, Context, Result};
 use bevy::prelude::*;
@@ -62,6 +62,10 @@ pub(crate) struct SoundKits {
     cache: HashMap<String, StaticSoundData>,
     pick: HashMap<u32, PickState>,
     rng: Rng,
+    /// Kit ids the catalog lacks that have already been reported. A Turtle server names kits a
+    /// client's SoundEntries does not ship, and a looping object event re-fires every cycle, so
+    /// only the first miss per id is an error; the catalog never grows, so later ones are silent.
+    reported_missing: HashSet<u32>,
 }
 
 impl SoundKits {
@@ -426,10 +430,17 @@ pub(super) fn play_kit_ext(
         return Ok(false);
     }
     let kit = match kit_ref {
-        KitRef::Id(id) => kits.catalog.get(id),
-        KitRef::Name(name) => kits.catalog.by_name(name),
-    }
-    .ok_or_else(|| anyhow!("unknown sound kit"))?;
+        KitRef::Id(id) => match kits.catalog.get(id) {
+            Some(kit) => kit,
+            // One report per id ([`SoundKits::reported_missing`]); a repeat plays nothing.
+            None if kits.reported_missing.insert(id) => return Err(anyhow!("unknown sound kit")),
+            None => return Ok(false),
+        },
+        KitRef::Name(name) => kits
+            .catalog
+            .by_name(name)
+            .ok_or_else(|| anyhow!("unknown sound kit"))?,
+    };
 
     let (id, volume, flags, min_dist, cutoff, eax_def) = (
         kit.id,
@@ -771,6 +782,7 @@ impl SoundKits {
             cache: HashMap::new(),
             pick: HashMap::new(),
             rng: Rng(0x9e37_79b9),
+            reported_missing: HashSet::new(),
         }
     }
 
