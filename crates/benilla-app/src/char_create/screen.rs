@@ -13,7 +13,7 @@ use crate::portrait::{GlueLook, GluePreview, PortraitImages, PortraitSource, GLU
 use benilla_assets::WorldAssets;
 
 use super::parts::{CharCreateUi, DialRow, DynIcon, DynText, DynTint, StatusLine};
-use super::{CreateAction, CreateSelection, ALLIANCE, HORDE, INITIAL_FACING};
+use super::{race_column, CreateAction, CreateSelection, ALLIANCE, HORDE, INITIAL_FACING};
 use crate::glue::art::{
     tc_rect, GlueArt, ALLIANCE_BORDER, ALLIANCE_FILL, BACKDROP, BTN_BG, DIM, GOLD, INFO_TEXT,
 };
@@ -53,6 +53,7 @@ pub(super) fn enter_create(
         &portraits,
         &art,
         strings.as_deref(),
+        catalog.as_deref(),
         &window,
     );
 }
@@ -66,6 +67,7 @@ pub(super) fn rescale_screen(
     portraits: Res<PortraitImages>,
     art: Res<GlueArt>,
     strings: Option<Res<GlueStrings>>,
+    catalog: Option<Res<CharCreate>>,
     window: Query<&Window, With<PrimaryWindow>>,
 ) {
     let s = crate::glue::screen_scale(window.single().ok());
@@ -78,6 +80,7 @@ pub(super) fn rescale_screen(
                 &portraits,
                 &art,
                 strings.as_deref(),
+                catalog.as_deref(),
                 &window,
             );
         }
@@ -90,6 +93,7 @@ fn spawn_screen(
     portraits: &PortraitImages,
     art: &GlueArt,
     strings: Option<&GlueStrings>,
+    catalog: Option<&CharCreate>,
     window: &Query<&Window, With<PrimaryWindow>>,
 ) {
     let font = wow_font(assets);
@@ -141,7 +145,7 @@ fn spawn_screen(
     // The chrome hangs off the canvas, the boxed scene's rect, never the window.
     let mut canvas = commands.spawn((crate::glue::glue_canvas(), ChildOf(root)));
     canvas.with_children(|ui| {
-        left_tower(ui, art, &font, s, strings);
+        left_tower(ui, art, &font, s, strings, catalog);
 
         // `CharacterCreateWoWLogo` (256×128 at (3,-7)), after the tower, as the reference's
         // frame order draws it over the border art.
@@ -198,6 +202,7 @@ fn left_tower(
     font: &Handle<Font>,
     s: f32,
     strings: &GlueStrings,
+    catalog: Option<&CharCreate>,
 ) {
     let px = |v: f32| Val::Px(v * s);
     ui.spawn((Node {
@@ -260,15 +265,28 @@ fn left_tower(
                 );
             }
 
-            // Two columns of 48² buttons at (33,68) and (127,68), row pitch 48+5.
-            for (faction, left) in [(ALLIANCE, 33.0), (HORDE, 127.0)] {
+            // Two columns of 48² buttons at (33,68) and (127,68), row pitch 48+5. Deviation: a
+            // chain with more than four races a side (Turtle's five) shrinks both columns into
+            // the shipped four rows' 207 px, so the gender pair below keeps its place.
+            let columns = [
+                (race_column(&ALLIANCE, catalog), 33.0),
+                (race_column(&HORDE, catalog), 127.0),
+            ];
+            let rows = columns
+                .iter()
+                .map(|(c, _)| c.len())
+                .max()
+                .unwrap_or(4)
+                .max(4);
+            let k = (4.0 * 48.0 + 3.0 * 5.0) / (rows as f32 * 48.0 + (rows - 1) as f32 * 5.0);
+            for (faction, left) in columns {
                 tower
                     .spawn((Node {
                         position_type: PositionType::Absolute,
-                        left: px(left),
+                        left: px(left + 24.0 * (1.0 - k)),
                         top: px(68.0),
                         flex_direction: FlexDirection::Column,
-                        row_gap: px(5.0),
+                        row_gap: px(5.0 * k),
                         ..default()
                     },))
                     .with_children(|col| {
@@ -282,7 +300,7 @@ fn left_tower(
                                 None::<DynText>,
                                 race_name(race),
                                 art,
-                                s,
+                                s * k,
                             );
                         }
                     });

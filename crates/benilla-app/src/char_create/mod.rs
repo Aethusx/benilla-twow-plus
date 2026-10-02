@@ -28,10 +28,26 @@ use crate::sound::GlueSound;
 /// 5-8 down the second, so Alliance then Horde, ascending race id. `RACE_ICON_TCOORDS`'s table
 /// order is a name-to-UV lookup and never the layout order.
 ///
+/// Turtle WoW appends its two races by the same law, High Elf (10) to Alliance and Goblin (9) to
+/// Horde; the screen lists only what the catalog makes creatable ([`race_column`]), so a stock
+/// chain keeps its four per side.
+///
 /// The Alliance half is also the race-to-side split `ui_unit::race_faction_group` answers
 /// `UnitFactionGroup("player")` with.
-pub(crate) const ALLIANCE: [u8; 4] = [1, 3, 4, 7]; // Human, Dwarf, Night Elf, Gnome
-const HORDE: [u8; 4] = [2, 5, 6, 8]; // Orc, Scourge, Tauren, Troll
+pub(crate) const ALLIANCE: [u8; 5] = [1, 3, 4, 7, 10]; // Human, Dwarf, Night Elf, Gnome, High Elf
+const HORDE: [u8; 5] = [2, 5, 6, 8, 9]; // Orc, Scourge, Tauren, Troll, Goblin
+
+/// A side's column as the loaded catalog offers it; with no catalog, the shipped four.
+fn race_column(side: &[u8], catalog: Option<&CharCreate>) -> Vec<u8> {
+    match catalog {
+        Some(c) => side
+            .iter()
+            .copied()
+            .filter(|r| c.0.playable_races().contains(r))
+            .collect(),
+        None => side.iter().copied().filter(|&r| r <= 8).collect(),
+    }
+}
 /// The reference's initial facing (`SetCharacterCreateFacing(-15)`), reset on every race switch.
 const INITIAL_FACING: f32 = -15.0 * std::f32::consts::PI / 180.0;
 
@@ -675,11 +691,22 @@ mod tests {
 
     #[test]
     fn race_columns_match_the_reference_screen() {
-        assert_eq!(ALLIANCE, [1, 3, 4, 7], "Human, Dwarf, Night Elf, Gnome");
-        assert_eq!(HORDE, [2, 5, 6, 8], "Orc, Scourge, Tauren, Troll");
+        assert_eq!(
+            race_column(&ALLIANCE, None),
+            [1, 3, 4, 7],
+            "Human, Dwarf, Night Elf, Gnome"
+        );
+        assert_eq!(
+            race_column(&HORDE, None),
+            [2, 5, 6, 8],
+            "Orc, Scourge, Tauren, Troll"
+        );
+        // Turtle's two follow the shipped four on their own sides.
+        assert_eq!(ALLIANCE[4], 10, "High Elf");
+        assert_eq!(HORDE[4], 9, "Goblin");
         let mut all: Vec<u8> = ALLIANCE.iter().chain(&HORDE).copied().collect();
         all.sort_unstable();
-        assert_eq!(all, (1..=8).collect::<Vec<u8>>());
+        assert_eq!(all, (1..=10).collect::<Vec<u8>>());
         assert!(ALLIANCE.windows(2).all(|w| w[0] < w[1]));
         assert!(HORDE.windows(2).all(|w| w[0] < w[1]));
     }

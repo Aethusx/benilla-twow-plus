@@ -2,9 +2,11 @@
 //! `CharacterCreate.lua` and the glue palette. Every piece is optional: with no client data the
 //! screens fall back to plain text buttons.
 
+use std::collections::HashMap;
+
 use bevy::prelude::*;
 
-use benilla_assets::WorldAssets;
+use benilla_assets::{LockRecover, WorldAssets};
 
 use super::add_material::AddUiMaterial;
 use super::backdrop::BackdropEdges;
@@ -80,6 +82,9 @@ pub(crate) struct ScrollArt {
 pub(crate) struct GlueArt {
     tried: bool,
     pub(crate) races: Option<(Handle<Image>, Vec2)>,
+    /// The chain's own `RACE_ICON_TCOORDS` (race to [male, female]) when its `CharacterCreate.lua`
+    /// parses: Turtle's sheet adds a column for Goblin and High Elf. `None` reads [`race_cell`].
+    race_cells: Option<HashMap<u8, [[f32; 4]; 2]>>,
     pub(crate) classes: Option<(Handle<Image>, Vec2)>,
     pub(crate) gender: Option<(Handle<Image>, Vec2)>,
     pub(crate) factions: Option<(Handle<Image>, Vec2)>,
@@ -199,6 +204,12 @@ impl GlueArt {
             return;
         }
         self.tried = true;
+        self.race_cells = assets
+            .chain
+            .lock_recover()
+            .read("Interface\\GlueXML\\CharacterCreate.lua")
+            .ok()
+            .and_then(|t| parse_race_icon_tcoords(&String::from_utf8_lossy(&t)));
         fn sized(
             assets: &mut WorldAssets,
             path: &str,
@@ -547,10 +558,84 @@ fn race_cell(race: u8) -> Option<(f32, f32)> {
     })
 }
 
-pub(crate) fn race_tc(race: u8, sex: u8) -> Option<[f32; 4]> {
+fn race_tc(race: u8, sex: u8) -> Option<[f32; 4]> {
     let (c, r) = race_cell(race)?;
     let r = r + if sex == 1 { 2.0 } else { 0.0 };
     Some([c * 0.25, (c + 1.0) * 0.25, r * 0.25, (r + 1.0) * 0.25])
+}
+
+impl GlueArt {
+    /// A race icon's texcoords: the chain's own table when it parsed, the shipped cells otherwise.
+    pub(crate) fn race_tc(&self, race: u8, sex: u8) -> Option<[f32; 4]> {
+        match self.race_cells.as_ref().and_then(|c| c.get(&race)) {
+            Some(cells) => Some(cells[usize::from(sex.min(1))]),
+            None => race_tc(race, sex),
+        }
+    }
+}
+
+/// `RACE_ICON_TCOORDS`'s keys, the uppercase ChrRaces fileStrings, to race ids; Goblin and
+/// BloodElf are Turtle's.
+const RACE_ICON_KEYS: [(&str, u8); 10] = [
+    ("HUMAN", 1),
+    ("ORC", 2),
+    ("DWARF", 3),
+    ("NIGHTELF", 4),
+    ("SCOURGE", 5),
+    ("TAUREN", 6),
+    ("GNOME", 7),
+    ("TROLL", 8),
+    ("GOBLIN", 9),
+    ("BLOODELF", 10),
+];
+
+/// Parse `RACE_ICON_TCOORDS = { ["HUMAN_MALE"] = {l, r, t, b}, ... }` out of `CharacterCreate.lua`.
+/// Unknown keys are skipped; `None` when no entry parses.
+fn parse_race_icon_tcoords(lua: &str) -> Option<HashMap<u8, [[f32; 4]; 2]>> {
+    let start = lua.find("RACE_ICON_TCOORDS")?;
+    let body = &lua[start..];
+    let body = &body[body.find('{')? + 1..];
+    let mut cells: HashMap<u8, [[f32; 4]; 2]> = HashMap::new();
+    let mut have: HashMap<u8, [bool; 2]> = HashMap::new();
+    for line in body.lines() {
+        let line = line.trim();
+        if line.starts_with('}') {
+            break;
+        }
+        let Some(key) = line
+            .strip_prefix("[\"")
+            .and_then(|l| l.split_once("\"]"))
+            .map(|(k, _)| k)
+        else {
+            continue;
+        };
+        let Some((name, sex)) = key.rsplit_once('_') else {
+            continue;
+        };
+        let sex = match sex {
+            "MALE" => 0,
+            "FEMALE" => 1,
+            _ => continue,
+        };
+        let Some(&(_, race)) = RACE_ICON_KEYS.iter().find(|(k, _)| *k == name) else {
+            continue;
+        };
+        let (Some(open), Some(close)) = (line.find('{'), line.rfind('}')) else {
+            continue;
+        };
+        let nums: Vec<f32> = line[open + 1..close]
+            .split(',')
+            .filter_map(|n| n.trim().parse().ok())
+            .collect();
+        let Ok(rect) = <[f32; 4]>::try_from(nums.as_slice()) else {
+            continue;
+        };
+        cells.entry(race).or_insert([[0.0; 4]; 2])[sex] = rect;
+        have.entry(race).or_insert([false; 2])[sex] = true;
+    }
+    // A race missing a sex would draw a blank cell; drop it to the shipped table instead.
+    cells.retain(|race, _| have.get(race) == Some(&[true, true]));
+    (!cells.is_empty()).then_some(cells)
 }
 
 /// A class icon's texcoords in `UI-CharacterCreate-Classes`, `CLASS_ICON_TCOORDS` verbatim.
@@ -583,4 +668,33 @@ pub(crate) fn tc_rect(size: Vec2, tc: [f32; 4]) -> Rect {
         tc[1] * size.x,
         tc[3] * size.y,
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_turtle_icon_table_adds_its_races() {
+        let lua = r#"
+RACE_ICON_TCOORDS = {
+	["HUMAN_MALE"]		= {0, 0.2, 0, 0.25},
+	["HUMAN_FEMALE"]	= {0, 0.2, 0.5, 0.75},
+	["GOBLIN_MALE"]		= {0.8, 1.0, 0.25, 0.5},
+	["GOBLIN_FEMALE"]	= {0.8, 1.0, 0.75, 1.0},
+	["BLOODELF_MALE"]	= {0.8, 1.0, 0, 0.25},
+};
+"#;
+        let cells = parse_race_icon_tcoords(lua).expect("parses");
+        assert_eq!(cells[&1], [[0.0, 0.2, 0.0, 0.25], [0.0, 0.2, 0.5, 0.75]]);
+        assert_eq!(cells[&9][1], [0.8, 1.0, 0.75, 1.0]);
+        // A race with one sex only falls back to the shipped cells.
+        assert!(!cells.contains_key(&10));
+    }
+
+    #[test]
+    fn the_shipped_cells_answer_without_a_table() {
+        assert_eq!(race_tc(1, 0), Some([0.0, 0.25, 0.0, 0.25]));
+        assert_eq!(race_tc(9, 0), None);
+    }
 }

@@ -258,9 +258,10 @@ pub(in crate::entities) fn ensure_item_model(
         Some(d) if d.model[col].is_some() => {
             let mut model = d.model[col].clone().unwrap();
             if let ItemModelKind::Helm { race, sex } = kind {
-                // Race 1-8 is Hu Or Dw Ni Sc Ta Gn Tr, sex M or F.
-                const RACE_PREFIX: [&str; 8] = ["Hu", "Or", "Dw", "Ni", "Sc", "Ta", "Gn", "Tr"];
-                let prefix = RACE_PREFIX[(race.clamp(1, 8) - 1) as usize];
+                // Race 1-10 is Hu Or Dw Ni Sc Ta Gn Tr Go Be, sex M or F; Turtle ships the last two.
+                const RACE_PREFIX: [&str; 10] =
+                    ["Hu", "Or", "Dw", "Ni", "Sc", "Ta", "Gn", "Tr", "Go", "Be"];
+                let prefix = RACE_PREFIX[(race.clamp(1, 10) - 1) as usize];
                 let letter = if sex == 1 { 'F' } else { 'M' };
                 let stem = model.strip_suffix(".m2").unwrap_or(&model).to_string();
                 model = format!("{stem}_{prefix}{letter}.m2");

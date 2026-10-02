@@ -510,6 +510,9 @@ pub(crate) fn race_names(race: u8) -> Option<(&'static str, &'static str)> {
         6 => ("Tauren", "Tauren"),
         7 => ("Gnome", "Gnome"),
         8 => ("Troll", "Troll"),
+        // Turtle WoW's two, with its ChrRaces fileStrings.
+        9 => ("Goblin", "Goblin"),
+        10 => ("High Elf", "BloodElf"),
         _ => return None,
     })
 }
@@ -534,7 +537,7 @@ pub(crate) fn class_names(class: u8) -> Option<(&'static str, &'static str)> {
 /// where addons concatenate `UnitFactionGroup("player")` at file scope; [`faction_group`] reads
 /// the live template.
 pub(crate) fn race_faction_group(race: u8) -> Option<&'static str> {
-    if !(1..=8).contains(&race) {
+    if !(1..=10).contains(&race) {
         return None;
     }
     Some(if crate::char_create::ALLIANCE.contains(&race) {
@@ -548,13 +551,15 @@ pub(crate) fn race_faction_group(race: u8) -> Option<&'static str> {
 /// never the live template: `ChrRaces.dbc` field 2 to `FactionTemplate.dbc` field 3's group mask,
 /// `& 4` Horde, else `& 2` Alliance, so a template-35 GM keeps his rank title. Read by
 /// `GetPVPRankInfo` (`0x51a9af`, `0x51a9c8`), `UnitPVPName` (`0x5efe60`) and the scoreboard
-/// (`0x4aa200`). A frozen copy of the shipped nine rows; race 9 (Goblin) answers Alliance.
+/// (`0x4aa200`). A frozen copy of the shipped rows. Deviation: race 9 (Goblin) answers Horde,
+/// where 5875's unplayable row answers Alliance, because Turtle WoW makes it a Horde race; race
+/// 10 is Turtle's High Elf, Alliance.
 pub(crate) fn race_pvp_team(race: u8) -> i8 {
     match race {
         // Group mask 3, Player|Alliance: `& 4` clear, `& 2` set.
-        1 | 3 | 4 | 7 | 9 => 1,
+        1 | 3 | 4 | 7 | 10 => 1,
         // Group mask 5, Player|Horde: `& 4` set, tested first.
-        2 | 5 | 6 | 8 => 0,
+        2 | 5 | 6 | 8 | 9 => 0,
         // No `ChrRaces` row: the engine's bounds-failure `-1`, which names no GlobalString.
         _ => -1,
     }

@@ -28,7 +28,9 @@ const SECTION_HAIR: u8 = 3;
 /// A CharSections availability key: `(race, sex, sectionType, variation, color)`.
 type SectionKey = (u8, u8, u8, u8, u8);
 
-/// The playable races, ChrRaces ids 1–8; Goblin (9) and above are not creatable.
+/// The shipped playable races, ChrRaces ids 1–8; 1.12.1's Goblin (9) row has no CharBaseInfo
+/// classes. The loaded set is the data's own ([`CharCreateCatalog::playable_races`]): every
+/// ChrRaces row CharBaseInfo offers a class, so a Turtle chain adds Goblin (9) and High Elf (10).
 const PLAYABLE_RACES: [u8; 8] = [1, 2, 3, 4, 5, 6, 7, 8];
 
 /// The shipped ChrRaces fileStrings (col 15), guarding [`load_races`]' string columns.
@@ -108,6 +110,8 @@ pub struct CharCreateCatalog {
     ranges: HashMap<(u8, u8), DialRanges>,
     /// (race, class, sex) → the worn starting-outfit items.
     start_outfits: HashMap<(u8, u8, u8), Vec<StartOutfitItem>>,
+    /// The creatable races ascending: ChrRaces rows CharBaseInfo offers at least one class.
+    playable: Vec<u8>,
 }
 
 impl CharCreateCatalog {
@@ -116,6 +120,11 @@ impl CharCreateCatalog {
         self.displays
             .get(&race)
             .map(|&(m, f)| if sex == 0 { m } else { f })
+    }
+
+    /// The creatable races, ascending by id: the shipped eight, plus any a patch adds.
+    pub fn playable_races(&self) -> &[u8] {
+        &self.playable
     }
 
     /// Whether a race may be created as a class (CharBaseInfo less `UNUSED_COMBOS`).
@@ -176,8 +185,15 @@ impl CharCreateCatalog {
         let hair_geo = load_hair_geosets(chain)?;
         let facial = load_facial_hair_styles(chain)?;
 
+        let mut playable: Vec<u8> = displays
+            .keys()
+            .copied()
+            .filter(|&race| combos.iter().any(|&(r, _)| r == race))
+            .collect();
+        playable.sort_unstable();
+
         let mut ranges = HashMap::new();
-        for race in PLAYABLE_RACES {
+        for &race in &playable {
             for sex in [0u8, 1] {
                 ranges.insert(
                     (race, sex),
@@ -193,6 +209,7 @@ impl CharCreateCatalog {
             combos,
             ranges,
             start_outfits,
+            playable,
         };
         catalog.self_check()?;
         for combo in UNUSED_COMBOS {
@@ -233,6 +250,11 @@ impl CharCreateCatalog {
             }
         }
         for race in PLAYABLE_RACES {
+            if !self.playable.contains(&race) {
+                bail!("ChrRaces × CharBaseInfo: shipped race {race} is not creatable");
+            }
+        }
+        for &race in &self.playable {
             for sex in [0u8, 1] {
                 if self.body_display(race, sex).unwrap_or(0) == 0 {
                     bail!("ChrRaces: race {race} sex {sex} has no body displayId");
@@ -286,10 +308,8 @@ fn load_races(
     let mut tokens = HashMap::new();
     for r in rs.records() {
         let Some(race) = u32_at(r, 0) else { continue };
+        // Every row: the playable set is the caller's ChrRaces × CharBaseInfo intersection.
         let race = race as u8;
-        if !PLAYABLE_RACES.contains(&race) {
-            continue;
-        }
         if let (Some(male), Some(female)) = (u32_at(r, 4), u32_at(r, 5)) {
             displays.insert(race, (male, female));
         }
