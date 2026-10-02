@@ -5,6 +5,7 @@ use benilla_srp::vanilla_header::{HeaderCrypto, ProofSeed};
 use benilla_srp::{NormalizedString, SESSION_KEY_LENGTH};
 
 use crate::messages::{self, opcode, Character, MoveMode, ServerPacket};
+use crate::ServerFlavor;
 
 use super::movement::{client_uptime_ms, movement_info, MOVEMENT_FLAG_FORWARD};
 use super::reader::WorldReader;
@@ -71,6 +72,8 @@ pub struct WorldSession {
     tutorial_flags: Option<Vec<u8>>,
     /// `SMSG_ADDON_INFO`'s per-record status bytes in order; `None` until the server answers.
     addon_info: Option<Vec<u8>>,
+    /// The server family, for the handshake's Warden arm and the char-create body.
+    flavor: ServerFlavor,
 }
 
 impl WorldSession {
@@ -80,7 +83,13 @@ impl WorldSession {
         username: &str,
         session_key: [u8; SESSION_KEY_LENGTH],
     ) -> Result<Self> {
-        Self::connect_queued(addr, username, session_key, &mut |_| true)
+        Self::connect_queued(
+            addr,
+            username,
+            session_key,
+            ServerFlavor::Vanilla,
+            &mut |_| true,
+        )
     }
 
     /// [`Self::connect`], calling `on_queue` with each queue position; `false` abandons the queue.
@@ -90,6 +99,7 @@ impl WorldSession {
         addr: impl ToSocketAddrs,
         username: &str,
         session_key: [u8; SESSION_KEY_LENGTH],
+        flavor: ServerFlavor,
         on_queue: &mut dyn FnMut(Option<u32>) -> bool,
     ) -> Result<Self> {
         let mut queued = false;
@@ -135,9 +145,11 @@ impl WorldSession {
             billing_time_rested: 0,
             tutorial_flags: None,
             addon_info: None,
+            flavor,
         };
 
-        // AUTH_RESPONSE is not always first, so others are skipped; Warden data ends the connect.
+        // AUTH_RESPONSE is not always first, so others are skipped; Warden data ends the connect
+        // unless the flavor tolerates it.
         loop {
             match session.recv()? {
                 ServerPacket::AuthResponse {
@@ -170,7 +182,7 @@ impl WorldSession {
                 }
                 ServerPacket::Other {
                     opcode: opcode::SMSG_WARDEN_DATA,
-                } => return Err(WardenRequired.into()),
+                } if !session.flavor.tolerates_warden() => return Err(WardenRequired.into()),
                 _ => continue,
             }
         }
@@ -239,7 +251,7 @@ impl WorldSession {
                 // Warden can arm on either side of SMSG_AUTH_RESPONSE, so this step refuses it too.
                 ServerPacket::Other {
                     opcode: opcode::SMSG_WARDEN_DATA,
-                } => return Err(WardenRequired.into()),
+                } if !self.flavor.tolerates_warden() => return Err(WardenRequired.into()),
                 // Kept for the world entry when the server sends it this early.
                 ServerPacket::TutorialFlags(flags) => {
                     self.tutorial_flags = Some(flags.bytes);
@@ -253,7 +265,9 @@ impl WorldSession {
 
     /// Create a character; returns the `SMSG_CHAR_CREATE` result byte.
     pub fn create_character(&mut self, req: &messages::CharCreateReq) -> Result<u8> {
-        self.send(opcode::CMSG_CHAR_CREATE, &messages::char_create(req))?;
+        let mut body = messages::char_create(req);
+        body.extend_from_slice(self.flavor.char_create_tail());
+        self.send(opcode::CMSG_CHAR_CREATE, &body)?;
         loop {
             match self.recv()? {
                 ServerPacket::CharCreate { result } => return Ok(result),

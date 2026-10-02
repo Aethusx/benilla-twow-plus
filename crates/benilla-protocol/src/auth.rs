@@ -213,6 +213,13 @@ pub fn write_logon_proof(
 pub fn read_proof_reply(r: &mut impl Read) -> Result<[u8; 20]> {
     let opcode = read_u8(r)?;
     if opcode != CMD_AUTH_LOGON_PROOF {
+        // mangos-family realmd refuses a build it does not know at the proof stage with a
+        // challenge-shaped reply, `0x00, 0x00, WOW_FAIL_VERSION_INVALID` (`_HandleLogonProof`).
+        if opcode == CMD_AUTH_LOGON_CHALLENGE {
+            let _protocol = read_u8(r)?;
+            let result = read_u8(r)?;
+            return Err(AuthReject { code: result }.into());
+        }
         bail!("expected CMD_AUTH_LOGON_PROOF (0x01), got {opcode:#x}");
     }
     let result = read_u8(r)?;
@@ -308,6 +315,15 @@ mod tests {
         } else {
             assert_eq!(client_os(), OS_WINDOWS);
         }
+    }
+
+    /// A proof-stage build refusal (`0x00, 0x00, 0x09`) surfaces as its `AuthReject`, not as a
+    /// wrong-opcode transport error.
+    #[test]
+    fn a_challenge_shaped_proof_reply_is_a_build_refusal() {
+        let mut reply: &[u8] = &[0x00, 0x00, 0x09];
+        let err = read_proof_reply(&mut reply).unwrap_err();
+        assert_eq!(err.downcast_ref::<AuthReject>().map(|r| r.code), Some(0x09));
     }
 
     /// An arbitrary but fixed `A` for the version-proof vectors below.

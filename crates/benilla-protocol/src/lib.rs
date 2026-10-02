@@ -3,6 +3,7 @@
 
 pub mod auth;
 pub mod events;
+pub mod flavor;
 pub mod guid;
 pub mod messages;
 pub mod wire;
@@ -12,6 +13,7 @@ pub use events::{
     decode, CharAction, EntityKind, LoginRefusal, LoginStage, MoveSpeeds, Poll, SessionEnd,
     SessionEvent, SessionEventKind,
 };
+pub use flavor::{ServerFlavor, TWOW_CLIENT_BUILD};
 pub use messages::field;
 pub use messages::{
     AttackSwingError, CharCreateReq, CharEnumItem, Character, CorpseLook, CreateSpline, ItemInfo,
@@ -164,6 +166,11 @@ impl Logon {
 
 /// The full SRP6 logon against a vanilla `realmd`, then the realm list.
 pub fn logon(host: &str, username: &str, password: &str) -> Result<Logon> {
+    logon_as(host, username, password, ServerFlavor::Vanilla)
+}
+
+/// [`logon`] against a `flavor` realmd, which decides the build the challenge presents.
+pub fn logon_as(host: &str, username: &str, password: &str, flavor: ServerFlavor) -> Result<Logon> {
     let (host, port) = host_port(host, AUTH_PORT);
 
     let username_n =
@@ -178,8 +185,12 @@ pub fn logon(host: &str, username: &str, password: &str) -> Result<Logon> {
         let mut dialed = None;
         for _ in 0..MAX_CHALLENGE_DIALS {
             let mut stream = dial(host, port)?;
-            auth::write_logon_challenge(&mut stream, &username.to_uppercase(), CLIENT_BUILD)
-                .context("sending logon challenge")?;
+            auth::write_logon_challenge(
+                &mut stream,
+                &username.to_uppercase(),
+                flavor.realmd_build(),
+            )
+            .context("sending logon challenge")?;
             let reply =
                 auth::read_challenge_reply(&mut stream).context("reading logon challenge reply")?;
             let server_public_key = PublicKey::from_le_bytes(reply.server_public_key)

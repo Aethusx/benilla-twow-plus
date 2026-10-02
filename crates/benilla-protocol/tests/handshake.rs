@@ -94,3 +94,17 @@ fn a_warden_server_is_refused_at_the_handshake() {
         "expected WardenRequired, got: {err:#}"
     );
 }
+
+/// Turtle sends Warden data on every login and never kicks over it, so its flavor skips it.
+#[test]
+fn a_turtle_session_skips_warden_data() {
+    let addr = fake_server(vec![(opcode::SMSG_WARDEN_DATA, vec![0u8; 16])]);
+    assert!(WorldSession::connect_queued(
+        &addr,
+        "one",
+        SESSION_KEY,
+        benilla_protocol::ServerFlavor::Turtle,
+        &mut |_| true,
+    )
+    .is_ok());
+}
