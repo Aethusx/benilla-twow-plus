@@ -248,6 +248,7 @@ fn an_empty_account_parks_at_select_without_creating_a_character() {
             user: USER.into(),
             pass: PASS.into(),
             host: realmd,
+            flavor: Default::default(),
             generation: 0,
         })
         .unwrap();

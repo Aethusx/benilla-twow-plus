@@ -64,6 +64,8 @@ pub(crate) struct LoginRequest {
     /// The realmlist to dial, `host[:port]`, per attempt so an edit mid-dial cannot retarget the
     /// connection in flight.
     pub(crate) host: String,
+    /// The server family the install targets ([`crate::server_flavor`]).
+    pub(crate) flavor: benilla_protocol::ServerFlavor,
     pub(crate) generation: u64,
 }
 
@@ -351,7 +353,7 @@ fn run(
     // Logon: the dial and the SRP6 exchange against realmd.
     let mut logon = {
         stage(LoginStage::Connecting);
-        match benilla_protocol::logon(&req.host, &req.user, &req.pass) {
+        match benilla_protocol::logon_as(&req.host, &req.user, &req.pass, req.flavor) {
             Ok(l) => l,
             Err(e) => {
                 if canceled() {
@@ -458,6 +460,7 @@ fn run(
             &world_addr,
             &req.user,
             logon.session_key,
+            req.flavor,
             &mut on_queue,
         ) {
             Ok(s) => s,

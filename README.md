@@ -89,6 +89,10 @@ does the same (`ln -s /path/to/WoW WoW`, or on Windows a junction, which needs n
 screen, which remembers it. Credentials go in at the login screen, or set `WOW_USER` and `WOW_PASS`
 to skip it.
 
+Turtle WoW servers work from a Turtle WoW 1.18.1 install: benilla sees Turtle's own interface files
+in the install and logs in as its build, 7272, with its Goblin and High Elf races on the create
+screen. `WOW_FLAVOR=turtle` or `WOW_FLAVOR=vanilla` overrides that detection.
+
 Settings, screenshots and addons live in `benilla-config/` at the repo root: a 1.12 addon goes in
 `benilla-config/AddOns/`. [`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md) has the rest, from the
 player build to the tests.

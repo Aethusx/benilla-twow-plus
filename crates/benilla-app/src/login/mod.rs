@@ -147,6 +147,7 @@ pub(super) struct Attempt<'w> {
     submit: Res<'w, LoginSubmit>,
     abandon: Res<'w, LoginAbandon>,
     realmlist: Res<'w, crate::realmlist::Realmlist>,
+    flavor: Res<'w, crate::server_flavor::Flavor>,
 }
 
 impl Attempt<'_> {
@@ -161,6 +162,7 @@ impl Attempt<'_> {
             user: user.to_string(),
             pass: pass.to_string(),
             host: self.realmlist.address().to_string(),
+            flavor: self.flavor.flavor,
             generation: self.abandon.0.load(Ordering::SeqCst),
         });
     }
@@ -992,6 +994,7 @@ mod tests {
             .insert_resource(crate::realmlist::Realmlist::unpinned(
                 crate::realmlist::DEFAULT_REALMLIST,
             ))
+            .init_resource::<crate::server_flavor::Flavor>()
             .insert_resource(LoginSubmit(tx))
             .insert_resource(LoginAbandon(std::sync::Arc::new(
                 std::sync::atomic::AtomicU64::new(0),
