@@ -107,6 +107,9 @@ pub struct WeatherState {
     /// packet retires and every unreplayed packet is discarded (`0x67575a`). A same-type grade
     /// change does not cut; the rain thins on the ramp.
     pub(crate) cut_seq: u32,
+    /// Weather a crate on top has turned off: its effect and sky resolve as clear skies. Empty in
+    /// stock benilla.
+    pub suppressed: Vec<WeatherKind>,
 }
 
 /// The `weatherDensity` quality table (`0x67b870`): the spawn-rate gain `K` in `rate = K·P·grade`.
@@ -124,6 +127,7 @@ impl Default for WeatherState {
             sky_density: 0.0,
             weather_density: 3,
             cut_seq: 0,
+            suppressed: Vec::new(),
         }
     }
 }
@@ -157,6 +161,12 @@ impl WeatherState {
 
     /// Resolves the frame's published values, as the reference's update driver (`0x67be40`) does.
     fn resolve(&mut self, now: f64) {
+        if self.suppressed.contains(&self.effect_kind) {
+            self.intensity_a = 0.0;
+            self.effect_density = 0.0;
+            self.sky_density = 0.0;
+            return;
+        }
         let a = self.intensity.value(now);
         self.intensity_a = a;
         self.effect_density = ((a - 0.25) * (4.0 / 3.0)).max(0.0);

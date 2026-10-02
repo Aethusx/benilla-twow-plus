@@ -204,6 +204,21 @@ impl WorldCollision<'_, '_> {
         }
     }
 
+    /// The line-of-sight segment from `from` to `to`, as the reference's LOS query traces it
+    /// (the camera/LOS faces, NOCAMCOLLIDE dropped, two-sided, no movers): the hit's fraction of
+    /// the way along, `None` when clear.
+    pub fn sight(&self, from: Vec3, to: Vec3) -> Option<f32> {
+        let span = to - from;
+        let length = span.length();
+        let dir = Dir3::new(span).ok()?;
+        let filter =
+            Self::camera_filter().with_excluded_entities(self.exclusions.0.iter().copied());
+        self.ms
+            .spatial_query
+            .cast_ray(from, dir, length, true, &filter)
+            .map(|h| h.distance / length)
+    }
+
     /// A one-sided ray against the body's world.
     pub fn ray_body(&self, origin: Vec3, dir: Dir3, max_distance: f32) -> Option<RayHitData> {
         one_sided::cast_ray(&self.ms, origin, dir, max_distance, &Self::body_filter())
