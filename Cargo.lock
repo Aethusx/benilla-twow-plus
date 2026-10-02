@@ -4437,6 +4437,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "nampower"
+version = "0.2.0"
+dependencies = [
+ "benilla-app",
+ "benilla-buildstamp",
+ "benilla-formats",
+ "benilla-protocol",
+ "benilla-ui",
+ "bevy",
+ "mlua",
+]
+
+[[package]]
 name = "nanorand"
 version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"

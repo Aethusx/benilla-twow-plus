@@ -1,0 +1,31 @@
+[package]
+name = "nampower"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Nampower on top of benilla: the spell queue, its NP_ CVars, and its Lua API and events, through benilla-app's `ext` seams"
+
+[lints]
+workspace = true
+
+[features]
+default = ["dev"]
+# The instruments; the player build is `--no-default-features`.
+dev = ["benilla-app/dev"]
+
+[dependencies]
+# `default-features = false`, or `--no-default-features` still builds benilla-app with `dev`.
+benilla-app = { path = "../benilla-app", default-features = false }
+benilla-formats = { path = "../benilla-formats", default-features = false }
+benilla-protocol = { path = "../benilla-protocol" }
+benilla-ui = { path = "../benilla-ui" }
+bevy.workspace = true
+mlua = { version = "0.11", features = ["lua51", "vendored"] }
+
+[build-dependencies]
+benilla-buildstamp = { path = "../benilla-buildstamp" }
+
+[[bin]]
+name = "benilla-nampower"
+path = "src/main.rs"
+test = false
