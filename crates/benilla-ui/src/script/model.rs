@@ -987,12 +987,17 @@ impl Model {
         self.errors.push(msg);
     }
 
-    /// Records a non-fatal warning for the host's terminal and the retained diagnostic log.
+    /// Records a non-fatal warning for the retained diagnostic log, and for the host's terminal on
+    /// its first occurrence: a repeat counts on the retained row, so a loop that warns per call
+    /// (Turtle WoW's shop scans its entries through one tooltip) is one terminal line.
     pub(crate) fn record_warning(&mut self, msg: impl Into<String>) {
         let msg = msg.into();
-        self.diagnostics
-            .record(super::diagnostics::DiagnosticKind::Warning, &msg);
-        self.warnings.push(msg);
+        if self
+            .diagnostics
+            .record(super::diagnostics::DiagnosticKind::Warning, &msg)
+        {
+            self.warnings.push(msg);
+        }
     }
 
     /// A warning for the host's terminal only, for a message already retained under another kind.
