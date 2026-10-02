@@ -408,6 +408,11 @@ impl Items {
         })
     }
 
+    /// The template for `entry` if already cached, never asking.
+    pub(crate) fn cached(&self, entry: u32) -> Option<&ItemInfo> {
+        self.templates.get(entry)
+    }
+
     /// Whether the server answered `entry` as unknown, not still pending; the cast-fail redisplay
     /// then shows the reference's `"UNKNOWN"` instead of waiting.
     pub(crate) fn template_answered_unknown(&self, entry: u32) -> bool {

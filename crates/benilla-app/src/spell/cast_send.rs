@@ -103,6 +103,8 @@ pub(crate) struct CastLadder<'w, 's> {
     pub(crate) trade_skill_opens: ResMut<'w, crate::ui_tradeskill::TradeSkillOpens>,
     pub(crate) ground: ResMut<'w, super::targeting::SpellTargeting>,
     pub(crate) held_for_pick: ResMut<'w, HeldForPick>,
+    /// A crate's hook on every press ([`crate::ext::CastGate`]); absent in a bare harness.
+    pub(crate) gate: Option<ResMut<'w, crate::ext::CastGateHook>>,
 }
 
 /// What a targeting-cursor click bound: what `BindLocation 0x6e60f0` or `BindTarget 0x6e5b40`
@@ -193,6 +195,9 @@ impl CastLadder<'_, '_> {
             self.cooldowns.start_gcd(spell_id, d, now, &self.spell_mods);
         }
         self.ground.clear();
+        if let Some(gate) = self.gate.as_mut().and_then(|g| g.0.as_mut()) {
+            gate.targeted_sent(spell_id, now);
+        }
     }
 
     /// TryCast's dead rung alone, for the Attack button, whose short-circuit (`0x6e4c7a`) leaves
@@ -252,7 +257,132 @@ impl CastLadder<'_, '_> {
         self.send_bound(spell_id, ctx, CastCommit::Spell, Some(go_guid), None);
     }
 
+    /// An [`crate::ext::ExtCast`]: the ladder with no attack pick, marked requeued for the gate.
+    pub(crate) fn send_requeued(
+        &mut self,
+        spell_id: u32,
+        ctx: &cast_target::CastContext,
+        commit: CastCommit,
+    ) {
+        self.send_gated(spell_id, ctx, commit, None, None, true);
+    }
+
     fn send_bound(
+        &mut self,
+        spell_id: u32,
+        ctx: &cast_target::CastContext,
+        commit: CastCommit,
+        on_object: Option<u64>,
+        hold: Option<HeldCast>,
+    ) {
+        self.send_gated(spell_id, ctx, commit, on_object, hold, false);
+    }
+
+    /// The ladder behind an installed [`crate::ext::CastGate`], which sees the press first and
+    /// the ladder's outcome after; with none installed, the ladder alone.
+    fn send_gated(
+        &mut self,
+        spell_id: u32,
+        ctx: &cast_target::CastContext,
+        commit: CastCommit,
+        on_object: Option<u64>,
+        hold: Option<HeldCast>,
+        requeued: bool,
+    ) {
+        let Some(gate) = self.gate.as_mut().and_then(|g| g.0.as_mut()) else {
+            self.send_ladder(spell_id, ctx, commit, on_object, hold);
+            return;
+        };
+        let now = Instant::now();
+        let def = self.spells.as_deref().and_then(|s| s.catalog.get(spell_id));
+        let level = ctx
+            .rel
+            .self_store
+            .and_then(|s| s.0.unit_level())
+            .unwrap_or(0);
+        let item = match commit {
+            CastCommit::Item {
+                bag_index,
+                slot,
+                entry,
+                spell_index,
+                ..
+            } => Some(crate::ext::ItemUse {
+                bag_index,
+                slot,
+                entry,
+                spell_index,
+            }),
+            CastCommit::Spell => None,
+        };
+        let attempt = crate::ext::CastAttempt {
+            spell_id,
+            spell: def,
+            item,
+            target: ctx.selection_guid,
+            caster: ctx.self_guid,
+            cast_time_ms: match (self.spells.as_deref(), def) {
+                (Some(s), Some(d)) => s.cast_time_ms(d, level, &self.spell_mods),
+                _ => 0,
+            },
+            gcd_ms: def.map_or(0, |d| {
+                if d.start_recovery_category == 0 && d.start_recovery_ms == 0 {
+                    return 0;
+                }
+                self.spell_mods
+                    .apply(d, super::OP_GCD, d.start_recovery_ms as i32)
+                    .max(0) as u32
+            }),
+            cooldown_remaining_ms: self
+                .cooldowns
+                .info(spell_id, item.map_or(0, |i| i.entry), def, now)
+                .remaining_ms,
+            requeued,
+            now,
+        };
+        match gate.attempt(&attempt) {
+            crate::ext::GateVerdict::Stop => return,
+            crate::ext::GateVerdict::PassOverInFlight => self.pending.release(),
+            crate::ext::GateVerdict::Pass => {}
+        }
+        let armed = self.pending.stamp();
+        let refusals = self.cast_errors.0.len();
+        send_spell_cast(
+            spell_id,
+            ctx,
+            commit,
+            on_object,
+            hold,
+            &self.commands,
+            &self.self_player,
+            self.spells.as_deref(),
+            &self.objects,
+            &self.items,
+            &mut self.sheath,
+            &mut self.ecs,
+            &mut self.pending,
+            &mut self.queued_melee,
+            &mut self.cooldowns,
+            &self.spell_mods,
+            &mut self.cast_errors,
+            &mut self.auto_repeat,
+            &mut self.trade_skill_opens,
+            &mut self.ground,
+            &mut self.held_for_pick,
+        );
+        let outcome = if self.pending.stamp() != armed {
+            crate::ext::CastOutcome::Sent
+        } else if let Some(fail) = self.cast_errors.0.get(refusals..).and_then(|f| f.last()) {
+            crate::ext::CastOutcome::Refused(fail.reason)
+        } else {
+            crate::ext::CastOutcome::Pending
+        };
+        if let Some(gate) = self.gate.as_mut().and_then(|g| g.0.as_mut()) {
+            gate.outcome(&attempt, outcome);
+        }
+    }
+
+    fn send_ladder(
         &mut self,
         spell_id: u32,
         ctx: &cast_target::CastContext,

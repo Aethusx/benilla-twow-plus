@@ -119,6 +119,21 @@ impl Cooldowns {
         self.records.len()
     }
 
+    /// Every record, for a crate's snapshot ([`crate::ext::ExtView::cooldown_records`]).
+    pub(crate) fn export(&self) -> impl Iterator<Item = crate::ext::CooldownRecord> + '_ {
+        self.records.iter().map(|r| crate::ext::CooldownRecord {
+            spell_id: r.spell_id,
+            item_id: r.item_id,
+            category: r.category,
+            category_wildcard: r.category_wildcard,
+            gcd_category: r.gcd_category,
+            recovery: (r.recovery.start, r.recovery.duration),
+            category_recovery: (r.category_recovery.start, r.category_recovery.duration),
+            gcd: (r.gcd.start, r.gcd.duration),
+            on_hold: r.on_hold,
+        })
+    }
+
     /// The counter a gated feed watches: moves on any mutation or pruned expiry.
     pub(crate) fn feed_epoch(&self) -> u64 {
         self.generation.wrapping_add(self.expiry_epoch)

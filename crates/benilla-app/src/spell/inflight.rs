@@ -106,6 +106,17 @@ impl PendingCast {
         }
     }
 
+    /// Drop the outstanding record whatever its spell: a crate's cast gate
+    /// ([`crate::ext::GateVerdict::PassOverInFlight`]) has taken the cast as done.
+    pub(crate) fn release(&mut self) {
+        self.0 = None;
+    }
+
+    /// The record's identity, which every arm renews: the spell and its deadline.
+    pub(crate) fn stamp(&self) -> Option<(u32, Instant)> {
+        self.0.as_ref().map(|p| (p.spell_id, p.deadline))
+    }
+
     /// Clear on a resolution for our spell only: a proc's `SMSG_SPELL_GO` mid-cast must not.
     pub(crate) fn clear_if(&mut self, spell_id: u32) {
         if self.0.as_ref().is_some_and(|p| p.spell_id == spell_id) {

@@ -344,8 +344,10 @@ impl Plugin for TargetPlugin {
                     click::clear_target_requests,
                     // The script calls that touch the selection, the cast or the targeting cursor
                     // (`TargetUnit`, `/target`, `ClearTarget`, `/cast`, `UseAction`, …), applied
-                    // in the order the script made them; then `DropItemOnUnit`'s pet leg.
+                    // in the order the script made them; then `DropItemOnUnit`'s pet leg. A
+                    // crate's queued casts ([`crate::ext::ExtCast`]) go first.
                     (
+                        crate::ext::apply_ext_casts,
                         crate::script_calls::apply_script_calls,
                         crate::ui_action::drop_item::drop_item_on_unit,
                     )

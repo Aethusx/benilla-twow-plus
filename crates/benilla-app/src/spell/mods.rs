@@ -197,6 +197,12 @@ impl SpellModifiers {
         })
     }
 
+    /// `GetSpellModifiers` as its caller sees it: the flat sum and the percent sum before the
+    /// `+100`, or `None` for the false exit.
+    pub(crate) fn sums(&self, d: &SpellDisplay, op: u8) -> Option<(i32, i32)> {
+        self.modifiers(d, op).map(|m| (m.flat, m.pct - 100))
+    }
+
     /// Apply a spell's modifier for `op` to `value`: the applier with its `test al,al` gate.
     pub(crate) fn apply(&self, d: &SpellDisplay, op: u8, value: i32) -> i32 {
         self.modifiers(d, op).map_or(value, |m| m.apply(value))

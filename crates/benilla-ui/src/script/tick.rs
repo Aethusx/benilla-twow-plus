@@ -31,6 +31,14 @@ impl UiScript {
     pub fn fire_event(&mut self, event: &str, args: Vec<ScriptValue>) {
         fire_event_into(&self.lua, event, args);
     }
+
+    /// Whether any frame registered `event` by name; a `RegisterAllEvents` frame does not count.
+    pub fn has_event_registrations(&self, event: &str) -> bool {
+        self.model_mut()
+            .event_to_frames
+            .get(event)
+            .is_some_and(|frames| !frames.is_empty())
+    }
 }
 
 /// [`UiScript::fire_event`] for a caller holding `&Lua`, such as a Lua binding.

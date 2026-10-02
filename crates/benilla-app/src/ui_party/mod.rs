@@ -43,7 +43,7 @@ impl Plugin for UiPartyPlugin {
 
 /// The group session mirror: `SMSG_GROUP_LIST` as sent plus its side state, reset on disconnect.
 #[derive(Resource, Default)]
-pub struct GroupState {
+pub(crate) struct GroupState {
     /// True from any `SMSG_GROUP_LIST` naming a leader until the all-zero "you left" list.
     pub in_group: bool,
     /// 0 party, 1 raid (vmangos `GroupType`, `Group/Group.h:116-120`).
@@ -96,7 +96,7 @@ pub struct GroupState {
 /// What one `SMSG_GROUP_LIST` shows: its lines, and whether it plays `igPlayerInviteAccept`
 /// (`0x5e6c83`-`0x5e6c8f`), the join's only sound, since `ERR_JOINED_GROUP_S`'s row has none.
 #[derive(Debug, Default, PartialEq)]
-pub struct ListOutcome {
+pub(crate) struct ListOutcome {
     pub lines: Vec<UiError>,
     pub invite_accept: bool,
 }

@@ -73,7 +73,7 @@ fn call(world: &mut World, id: SystemId<In<SessionEvent>>, name: &str, ev: Sessi
 
 /// `app.net_handler(SessionEventKind::X, on_x)` registers a system taking `In<SessionEvent>`;
 /// several handlers on one kind run in registration order.
-pub(crate) trait NetHandlerApp {
+pub trait NetHandlerApp {
     fn net_handler<M>(
         &mut self,
         kind: SessionEventKind,

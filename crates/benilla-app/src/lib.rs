@@ -53,6 +53,7 @@ mod debug_panel;
 mod dev;
 mod doodad_events;
 mod entities;
+pub mod ext;
 mod fishing_line;
 mod footprints;
 mod game_plugins;

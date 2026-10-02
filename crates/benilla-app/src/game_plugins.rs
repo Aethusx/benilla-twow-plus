@@ -138,6 +138,8 @@ impl PluginGroup for GamePlugins {
             .add(crate::char_create::CharCreatePlugin)
             .add(SoundPlugin)
             .add(TargetPlugin)
+            // The seams a crate on top reaches through; inert while nothing is installed.
+            .add(crate::ext::ExtPlugin)
             .add(TransportPlugin)
             .add(LoadingScreenPlugin)
             // The player-UI quad pass; `$WOW_UI_DEMO=1` seeds a proof scene.
