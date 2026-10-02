@@ -1,6 +1,6 @@
-//! A read-only MPQ reader for the 1.12.1 `Data/` chain: format V1/V2, every file stored whole or
-//! `COMPRESS`-flagged and sectored, no encrypted or single-unit files, no PTCH patches. Anything
-//! else is a hard error.
+//! A read-only MPQ reader for the 1.12.1 `Data/` chain: format V1/V2, every file stored whole,
+//! `COMPRESS`-flagged and sectored, or single-unit (one compressed block, as Turtle WoW's patches
+//! store some files); no encrypted files, no PTCH patches. Anything else is a hard error.
 //!
 //! The patch archives carry delete markers (flag `0x02000000`, size 0): the path is deleted from
 //! the composite chain. [`Archive::contains`] reports one present and [`Archive::read_file`]
@@ -51,6 +51,8 @@ struct HashEntry {
 #[derive(Clone, Copy)]
 struct BlockEntry {
     file_pos: u32,
+    /// The stored size: a single-unit file's one block, which has no offset table to size it.
+    packed_size: u32,
     file_size: u32,
     flags: u32,
 }
@@ -221,10 +223,6 @@ impl Archive {
         if block.flags & FLAG_ENCRYPTED != 0 {
             return Err(Error::Unsupported(format!("encrypted file {name}")));
         }
-        if block.flags & FLAG_SINGLE_UNIT != 0 {
-            return Err(Error::Unsupported(format!("single-unit file {name}")));
-        }
-
         let file = File::open(&idx.path)?;
         let file_pos = idx.archive_offset + block.file_pos as u64;
         let file_size = block.file_size as usize;
@@ -253,6 +251,20 @@ impl Archive {
                     "{name}: stored size ({file_size}) larger than the archive"
                 )));
             }
+            return Ok(open);
+        }
+
+        // Single-unit: the whole file is one compressed sector of `packed_size` bytes at
+        // `file_pos`, with no offset table, so it reads as a one-sector file of its own size.
+        if block.flags & FLAG_SINGLE_UNIT != 0 {
+            let packed = block.packed_size as usize;
+            if capped(packed, 1, avail) < packed {
+                return Err(Error::Corrupt(format!(
+                    "{name}: single-unit block ({packed}) larger than the archive"
+                )));
+            }
+            open.sector_size = file_size.max(1);
+            open.offsets = Some(vec![0, block.packed_size]);
             return Ok(open);
         }
 
@@ -559,7 +571,7 @@ fn read_block_table(
             let o = i * 4;
             BlockEntry {
                 file_pos: words[o],
-                // words[o + 1] is compressed_size, unread: the offset table sizes the sectors.
+                packed_size: words[o + 1],
                 file_size: words[o + 2],
                 flags: words[o + 3],
             }
@@ -917,6 +929,36 @@ mod tests {
             f.seek(SeekFrom::Current(-2000)).is_err(),
             "before the start"
         );
+        let _ = std::fs::remove_file(&path);
+    }
+
+    /// A single-unit file is one compressed block with no offset table, as Turtle WoW's
+    /// `patch-Y.MPQ` stores `LightFloatBand.dbc`; it reads whole and streams from any position.
+    #[test]
+    fn a_single_unit_file_reads_as_one_block() {
+        use flate2::{write::ZlibEncoder, Compression};
+        use std::io::Write;
+        let plain = three_sector_plain();
+        let mut e = ZlibEncoder::new(vec![0x02u8], Compression::default());
+        e.write_all(&plain).unwrap();
+        let packed = e.finish().unwrap();
+        assert!(packed.len() < plain.len());
+        let name = "DBFilesClient\\LightFloatBand.dbc";
+        let (arc, path) = open_temp_kept(
+            "single_unit",
+            &archive_with_one_block(
+                name,
+                FLAG_EXISTS | FLAG_COMPRESS | FLAG_SINGLE_UNIT,
+                &packed,
+                plain.len() as u32,
+            ),
+        );
+        assert_eq!(arc.read_file(name).unwrap(), plain);
+        let mut f = arc.open_file(name).unwrap();
+        f.seek(SeekFrom::Start(700)).unwrap();
+        let mut got = vec![0u8; 100];
+        f.read_exact(&mut got).unwrap();
+        assert_eq!(got, &plain[700..800]);
         let _ = std::fs::remove_file(&path);
     }
 
