@@ -246,6 +246,12 @@ pub(crate) struct Model {
     pub(crate) unit_auras: HashMap<u64, Vec<AuraState>>,
     /// The unit-token resolver's inputs (`0x515970`), which the aura bindings resolve through.
     pub(crate) unit_guids: super::UnitGuids,
+    /// A crate on top's wider token grammar ([`super::UnitTokenExtension`]); `None`, the stock
+    /// grammar alone.
+    pub(crate) unit_token_ext: Option<super::UnitTokenExtension>,
+    /// Guids a crate on top asks snapshots and aura lists for beyond the ones a stock token can
+    /// reach, so its tokens read them ([`super::UiScript::set_extra_unit_guids`]).
+    pub(crate) extra_unit_guids: Vec<u64>,
     /// Spell ids the cancel verbs queued (`CancelPlayerBuff`, `CancelTrackingBuff`, …), one
     /// `CMSG_CANCEL_AURA` each.
     pub(crate) cancel_aura_requests: Vec<u32>,
@@ -1006,9 +1012,32 @@ impl Model {
     }
 
     /// The state of the unit `token` names, as the `Unit*` getters read it: the snapshot the app
-    /// pushed under the token, else, for a token with a `target` hop, the chain's end.
+    /// pushed under the token, else, for a token with a `target` hop, the chain's end, else the
+    /// guid an installed [`super::UnitTokenExtension`] names.
     pub(crate) fn unit(&self, token: &str) -> Option<&UnitState> {
-        self.pushed_unit(token).or_else(|| self.chained_unit(token))
+        self.pushed_unit(token)
+            .or_else(|| self.chained_unit(token))
+            .or_else(|| self.units_by_guid.get(&self.extended_guid(token)??))
+    }
+
+    /// What an installed [`super::UnitTokenExtension`] makes of `token`: `None` without one, or
+    /// for a token outside its grammar.
+    pub(crate) fn extended_guid(&self, token: &str) -> Option<Option<u64>> {
+        (self.unit_token_ext.as_ref()?)(&self.unit_guids, token)
+    }
+
+    /// The resolver (`0x515970`) with the raise as the Lua error it is, then, where the stock
+    /// grammar names nobody or raises, an installed [`super::UnitTokenExtension`].
+    pub(crate) fn guid_of(&self, token: &str) -> mlua::Result<Option<u64>> {
+        match self.unit_guids.resolve(token) {
+            Ok(Some(guid)) => Ok(Some(guid)),
+            stock => match self.extended_guid(token) {
+                Some(guid) => Ok(guid),
+                None => {
+                    stock.map_err(|()| mlua::Error::runtime(format!("Unknown unit name: {token}")))
+                }
+            },
+        }
     }
 
     /// The snapshot pushed under `token` itself, folded as 1.12's resolver `0x515970` folds
@@ -1113,6 +1142,8 @@ impl Model {
             player_auras: Vec::new(),
             unit_auras: HashMap::new(),
             unit_guids: Default::default(),
+            unit_token_ext: None,
+            extra_unit_guids: Vec::new(),
             cancel_aura_requests: Vec::new(),
             tracking: None,
             script_calls: Vec::new(),

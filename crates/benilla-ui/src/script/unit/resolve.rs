@@ -179,6 +179,11 @@ impl UnitGuids {
         }
     }
 
+    /// The guid `token` names, `None` for nobody and for a token the resolver does not know.
+    pub fn guid(&self, token: &str) -> Option<u64> {
+        self.resolve(token).ok().flatten()
+    }
+
     /// The guid a parsed token names: its base's guid, then each `target` hop. `None` is nobody.
     pub(crate) fn resolve_unit(&self, base: UnitBase, hops: usize) -> Option<u64> {
         // The indexed bases: the table's row for the parsed number.
@@ -216,12 +221,6 @@ impl UnitGuids {
     /// lookup that finds its object is the reader's.
     pub(crate) fn chain_ends(&self) -> impl Iterator<Item = u64> + '_ {
         self.held.values().copied().filter(|&guid| guid != 0)
-    }
-
-    /// [`Self::resolve`] with the raise as the Lua error it is.
-    pub(crate) fn guid_of(&self, token: &str) -> mlua::Result<Option<u64>> {
-        self.resolve(token)
-            .map_err(|()| mlua::Error::runtime(format!("Unknown unit name: {token}")))
     }
 
     /// The `target` loop (`0x5159d3`-`0x515a2c`): nobody stays nobody, and each hop goes to the held

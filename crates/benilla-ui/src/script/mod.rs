@@ -152,7 +152,7 @@ pub use auction::{
     AuctionBid, AuctionCategory, AuctionHighBidder, AuctionItemRow, AuctionListState, AuctionQuery,
     AuctionStartRequest, AuctionState, AuctionSubCategory, BIDDER, LIST, OWNER, SORT_KEYS,
 };
-pub use aura::{AuraState, TrackingState};
+pub use aura::{player_buff_spell_id, unit_aura_spell_id, AuraState, TrackingState};
 pub use backdrop::{inset_atlas_bleed, pieces, Backdrop, BackdropPiece, Insets};
 pub use bank::BankState;
 pub use battlefield_positions::{BattlefieldFlagView, BattlefieldPositionView};
@@ -264,8 +264,9 @@ pub use types::{
 };
 pub(crate) use types::{FontExplicit, MeasuredText, RegionData};
 pub use unit::{
-    grey_band, level_reads_unknown, parse_unit_token, power_token, unit_is_grey, PlayerRecord,
-    SelectionRequest, UnitBase, UnitGuids, UnitState, UnitTokenParse,
+    grey_band, level_reads_unknown, parse_unit_token, power_token, unit_is_grey,
+    unit_token_guid_in, PlayerRecord, SelectionRequest, UnitBase, UnitGuids, UnitState,
+    UnitTokenExtension, UnitTokenParse,
 };
 pub use weapon_enchant::WeaponEnchant;
 pub use who_sort::{WhoSortChain, WhoSortKey};

@@ -8,6 +8,8 @@
 //!   the in-flight guard; [`CastOutcome`] reports what the ladder then did.
 //! - [`ExtCast`]: send a cast through the ladder, as a press would, at a chosen unit.
 //! - [`ExtView`]: read the selection, unit tokens, spell and item records, cooldowns and objects.
+//! - `UiScript::set_unit_token_extension` and `set_extra_unit_guids` (benilla-ui): a wider unit
+//!   token grammar, whose units' snapshots and aura lists the feeds here push.
 
 use std::time::Instant;
 
@@ -176,6 +178,11 @@ pub struct ExtCancelAura {
 /// The local state folder (`benilla-config/`), or `None` when persistence is off.
 pub fn local_state_dir() -> Option<std::path::PathBuf> {
     crate::local_state::home()
+}
+
+/// The local time as the chat and combat logs stamp each line, `M/D HH:MM:SS.mmm`.
+pub fn log_stamp() -> String {
+    crate::ui_chat::logging::stamp()
 }
 
 /// One cooldown record, as the client's `SpellHistory` node holds it: three timers as
@@ -477,6 +484,7 @@ pub struct ExtWorld<'w, 's> {
     names: Res<'w, crate::names::NameCache>,
     camera: Query<'w, 's, &'static Transform, With<benilla_world::view::WorldCamera>>,
     placed: Query<'w, 's, (&'static Guid, &'static GlobalTransform), With<ObjectStore>>,
+    speeds: Query<'w, 's, &'static crate::net::UnitSpeeds>,
 }
 
 impl ExtWorld<'_, '_> {
@@ -513,6 +521,11 @@ impl ExtWorld<'_, '_> {
     pub fn camera(&self) -> Option<(Vec3, Vec3)> {
         let t = self.camera.single().ok()?;
         Some((t.translation, *t.forward()))
+    }
+
+    /// A unit's movement speeds as its `LIVING` block and the speed changes last set them.
+    pub fn speeds(&self, guid: u64) -> Option<benilla_protocol::MoveSpeeds> {
+        self.speeds.get(*self.index.0.get(&guid)?).ok().map(|s| s.0)
     }
 
     /// Every streamed object's position and rotation.

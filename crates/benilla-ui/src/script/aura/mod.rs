@@ -92,9 +92,8 @@ fn returns(lua: &Lua, a: &AuraState, with_dispel_type: bool) -> mlua::Result<Mul
 /// `0x519542`): the player's cache list for the player, else that guid's; `None` for nobody or a
 /// unit with no list. A token the resolver does not recognise raises `Unknown unit name`.
 pub(crate) fn auras_of<'m>(model: &'m Model, token: &str) -> mlua::Result<Option<&'m [AuraState]>> {
-    let guids = &model.unit_guids;
-    Ok(guids.guid_of(token)?.and_then(|g| {
-        if g == guids.player {
+    Ok(model.guid_of(token)?.and_then(|g| {
+        if g == model.unit_guids.player {
             Some(model.player_auras.as_slice())
         } else {
             model.unit_auras.get(&g).map(Vec::as_slice)
@@ -130,6 +129,29 @@ fn nth_aura(
         Some(a) => returns(lua, &a, !helpful),
         None => Ok(MultiValue::new()),
     }
+}
+
+/// The spell id of the aura `UnitBuff(token, index)` (`helpful`) or `UnitDebuff` names, for a
+/// crate on top's native, which runs inside the VM; `None` past the end, for nobody and for a
+/// token the resolver refuses. No 1.12 verb answers it.
+pub fn unit_aura_spell_id(lua: &Lua, token: &str, index: i64, helpful: bool) -> Option<u32> {
+    let model = lua.app_data_ref::<Model>()?;
+    let list = auras_of(&model, token).ok()??;
+    let nth = usize::try_from(index.checked_sub(1)?).ok()?;
+    list.iter()
+        .filter(|a| a.helpful == helpful)
+        .nth(nth)
+        .map(|a| a.spell_id)
+}
+
+/// The spell id of the player's aura at `GetPlayerBuff`'s cache position `pos`, for a crate on
+/// top's native.
+pub fn player_buff_spell_id(lua: &Lua, pos: i64) -> Option<u32> {
+    let model = lua.app_data_ref::<Model>()?;
+    model
+        .player_auras
+        .get(usize::try_from(pos).ok()?)
+        .map(|a| a.spell_id)
 }
 
 impl super::UiScript {

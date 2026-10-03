@@ -337,10 +337,39 @@ impl super::UiScript {
     /// The guids the chains a script can spell end on ([`UnitGuids::chain_ends`]), each once: the
     /// units whose snapshots [`Self::set_unit_by_guid`] serves.
     pub fn chain_end_guids(&self) -> Vec<u64> {
-        let mut ends: Vec<u64> = self.model_ref().unit_guids.chain_ends().collect();
+        let model = self.model_ref();
+        let mut ends: Vec<u64> = model.unit_guids.chain_ends().collect();
+        ends.extend_from_slice(&model.extra_unit_guids);
+        drop(model);
         ends.sort_unstable();
         ends.dedup();
         ends
+    }
+
+    /// Install a wider unit-token grammar ([`UnitTokenExtension`]); the stock grammar alone until
+    /// one is.
+    pub fn set_unit_token_extension(&mut self, ext: UnitTokenExtension) {
+        self.model_mut().unit_token_ext = Some(ext);
+    }
+
+    /// The guids, beyond those a stock token reaches, whose snapshots ([`Self::chain_end_guids`])
+    /// and aura lists the app feeds, for the tokens a [`UnitTokenExtension`] names.
+    pub fn set_extra_unit_guids(&mut self, guids: Vec<u64>) {
+        let mut model = self.model_mut();
+        if model.extra_unit_guids != guids {
+            model.extra_unit_guids = guids;
+        }
+    }
+
+    /// What [`Self::set_extra_unit_guids`] last pushed.
+    pub fn extra_unit_guids(&self) -> Vec<u64> {
+        self.model_ref().extra_unit_guids.clone()
+    }
+
+    /// The guid `token` names, through the stock resolver and then any installed
+    /// [`UnitTokenExtension`]; `None` for nobody or an unknown token.
+    pub fn unit_token_guid(&self, token: &str) -> Option<u64> {
+        self.model_ref().guid_of(token).ok().flatten()
     }
 
     /// Push the player's copper (`PLAYER_FIELD_COINAGE`), read by `GetMoney`.
@@ -481,14 +510,30 @@ use resolve::token_recognised;
 /// ends in `luaL_error`; `""`, an absent token and a recognised one naming nothing pass. Whether
 /// nil arrives is per binding: of the 83 in the table at `0x850438`, 53 raise `Usage:` first and
 /// 13 unit-token bindings take nil with no gate.
-pub(crate) fn check_unit_token(token: &Option<String>) -> mlua::Result<()> {
+/// A token an installed [`UnitTokenExtension`] names passes too.
+pub(crate) fn check_unit_token(lua: &Lua, token: &Option<String>) -> mlua::Result<()> {
     match token {
         Some(t) if !t.is_empty() && !token_recognised(t) => {
+            let model = lua.app_data_ref::<Model>().expect("model app_data");
+            if model.extended_guid(t).is_some() {
+                return Ok(());
+            }
             Err(mlua::Error::runtime(format!("Unknown unit name: {t}")))
         }
         _ => Ok(()),
     }
 }
+
+/// The guid `token` names, through the stock resolver and then any installed
+/// [`UnitTokenExtension`], for a crate on top's native, which runs inside the VM.
+pub fn unit_token_guid_in(lua: &Lua, token: &str) -> Option<u64> {
+    lua.app_data_ref::<Model>()?.guid_of(token).ok().flatten()
+}
+
+/// A wider unit-token grammar a crate on top installs ([`super::UiScript::set_unit_token_extension`]),
+/// asked only where the stock resolver names nobody or raises: `None` leaves the token to the
+/// stock grammar, `Some(guid)` is a token it recognises, naming `guid` or, with `None`, nobody.
+pub type UnitTokenExtension = Box<dyn Fn(&UnitGuids, &str) -> Option<Option<u64>>>;
 
 /// Map a token's snapshot through `f` under a short model borrow, or answer `default` for an
 /// absent unit, after the token check.
@@ -498,7 +543,7 @@ fn with_unit<T>(
     default: T,
     f: impl FnOnce(&UnitState) -> T,
 ) -> mlua::Result<T> {
-    check_unit_token(token)?;
+    check_unit_token(lua, token)?;
     let model = lua.app_data_ref::<Model>().expect("model app_data");
     Ok(match token.as_ref().and_then(|t| model.unit(t)) {
         Some(u) => f(u),

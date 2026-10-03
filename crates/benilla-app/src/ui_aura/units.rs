@@ -180,6 +180,8 @@ impl UnitAuras {
         walk.extend([me, pet, target, mouseover, npc].map(|g| (g, false)));
         walk.extend(g.party.iter().chain(&g.party_pets).map(|&g| (g, true)));
         walk.extend(g.raid.iter().chain(&g.raid_pets).map(|&g| (g, true)));
+        // The guids a crate on top's wider token grammar names (`ext`), listed as held units.
+        walk.extend(script.extra_unit_guids().into_iter().map(|g| (g, false)));
         while let Some((guid, record_ok)) = walk.pop() {
             if guid == 0 || g.held.contains_key(&guid) {
                 continue;
