@@ -248,6 +248,7 @@ fn frame(
                     spell_id,
                     target,
                     item,
+                    place: None,
                 });
             }
             Action::Script(chunk) => {

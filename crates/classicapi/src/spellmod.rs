@@ -84,25 +84,30 @@ pub fn player_family(db: &Databases, mirror: &Mirror) -> u32 {
         .unwrap_or(0)
 }
 
-/// `Spell::Mod::Apply`: `base` with the player's modifiers for `op`, `(base + flat) *
-/// max(0, 100 + pct) / 100`; `base` unchanged for another family, a spell that ignores caster
-/// modifiers, or no matching cell.
-pub fn apply(tables: &Tables, family: u32, rec: &Row, op: u8, base: f32) -> f32 {
+/// The `(flat, pct)` sums of the player's modifiers on `rec` for `op`; `None` for another family,
+/// a spell that ignores caster modifiers, or no matching cell.
+pub fn cell(tables: &Tables, family: u32, rec: &Row, op: u8) -> Option<(i32, i32)> {
     let family_name = rec.u32(col::FAMILY_NAME);
-    if family_name == 0 || rec.u32(col::ATTRIBUTES_EX3) & ATTR_EX3_IGNORE_CASTER_MODIFIERS != 0 {
-        return base;
-    }
-    if family_name != family {
-        return base;
+    if family_name == 0
+        || family_name != family
+        || rec.u32(col::ATTRIBUTES_EX3) & ATTR_EX3_IGNORE_CASTER_MODIFIERS != 0
+    {
+        return None;
     }
     let flags = rec.u64(col::FAMILY_FLAGS);
     if flags == 0 {
-        return base;
+        return None;
     }
     let (flat, pct) = tables.sums(flags, op);
-    if flat == 0 && pct == 0 {
+    (flat != 0 || pct != 0).then_some((flat, pct))
+}
+
+/// `Spell::Mod::Apply`: `base` with the player's modifiers for `op`, `(base + flat) *
+/// max(0, 100 + pct) / 100`; `base` unchanged where [`cell`] finds none.
+pub fn apply(tables: &Tables, family: u32, rec: &Row, op: u8, base: f32) -> f32 {
+    let Some((flat, pct)) = cell(tables, family, rec, op) else {
         return base;
-    }
+    };
     let total = (pct + 100).max(0);
     (base + flat as f32) * total as f32 * 0.01
 }
@@ -110,21 +115,9 @@ pub fn apply(tables: &Tables, family: u32, rec: &Row, op: u8, base: f32) -> f32 
 /// The engine's integer applier (`0x6e6af0`), the cost and cast-time form: the division
 /// truncates toward zero.
 pub fn apply_int(tables: &Tables, family: u32, rec: &Row, op: u8, base: i32) -> i32 {
-    let family_name = rec.u32(col::FAMILY_NAME);
-    if family_name == 0
-        || family_name != family
-        || rec.u32(col::ATTRIBUTES_EX3) & ATTR_EX3_IGNORE_CASTER_MODIFIERS != 0
-    {
+    let Some((flat, pct)) = cell(tables, family, rec, op) else {
         return base;
-    }
-    let flags = rec.u64(col::FAMILY_FLAGS);
-    if flags == 0 {
-        return base;
-    }
-    let (flat, pct) = tables.sums(flags, op);
-    if flat == 0 && pct == 0 {
-        return base;
-    }
+    };
     let total = i64::from((pct + 100).max(0));
     ((i64::from(base) + i64::from(flat)) * total / 100)
         .clamp(i64::from(i32::MIN), i64::from(i32::MAX)) as i32

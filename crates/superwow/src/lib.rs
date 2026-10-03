@@ -104,6 +104,7 @@ impl State {
             spell_id,
             target,
             item: None,
+            place: None,
         });
     }
 

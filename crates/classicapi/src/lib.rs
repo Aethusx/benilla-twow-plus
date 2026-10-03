@@ -13,8 +13,8 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Instant;
 
 use benilla_app::ext::{
-    CastOutcome, ExtCancelAura, ExtCastNote, ExtCastSet, ExtRange, ExtUnitTokens, ExtUsable,
-    ExtView, ExtWorld, ScriptInstallers, ScriptValue, UiScript,
+    CastOutcome, ExtCancelAura, ExtCast, ExtCastNote, ExtCastSet, ExtRange, ExtUnitTokens,
+    ExtUsable, ExtView, ExtWorld, ScriptInstallers, ScriptValue, UiScript,
 };
 use bevy::prelude::*;
 
@@ -55,6 +55,8 @@ pub struct State {
     events: Vec<(&'static str, Vec<ScriptValue>)>,
     /// Our auras to cancel, `CMSG_CANCEL_AURA` each.
     cancels: Vec<u32>,
+    /// Casts the natives queued, sent through benilla's ladder next frame.
+    pub(crate) casts: Vec<ExtCast>,
     /// The nameplate diff: last frame's `(guid, frame)` pairs and every frame ever announced.
     plates_last: Vec<(u64, u32)>,
     plates_seen: std::collections::HashSet<u32>,
@@ -217,6 +219,7 @@ fn frame(
     ca: Res<Ca>,
     inputs: Inputs,
     mut cancels: MessageWriter<ExtCancelAura>,
+    mut casts: MessageWriter<ExtCast>,
     mut ext_tokens: ResMut<ExtUnitTokens>,
     mut notes: MessageReader<ExtCastNote>,
     script: Option<NonSendMut<UiScript>>,
@@ -296,7 +299,7 @@ fn frame(
         cast.take_fires()
     });
     lap.mark("cast");
-    let (events, cancel, focus_lost) = {
+    let (events, cancel, queued, focus_lost) = {
         let mut st = ca.lock();
         st.mirror.map_id = map.as_deref().map_or(0, |m| m.0);
         st.mirror.indoors = (st.mirror.player != 0).then(|| point.interior().is_some());
@@ -354,6 +357,7 @@ fn frame(
         (
             std::mem::take(&mut st.events),
             std::mem::take(&mut st.cancels),
+            std::mem::take(&mut st.casts),
             focus_lost,
         )
     };
@@ -361,6 +365,7 @@ fn frame(
     for spell_id in cancel {
         cancels.write(ExtCancelAura { spell_id });
     }
+    casts.write_batch(queued);
     let Some(mut script) = script else {
         return;
     };

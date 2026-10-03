@@ -66,6 +66,35 @@ pub(crate) fn commit_ground_cast_on_click(
     ladder.commit_targeted(spell_id, commit, bound);
 }
 
+/// The terrain leg for a crate's placement ([`crate::ext::ExtPlace`]): with a ground cursor up,
+/// bind `at` and send as a terrain click does; any other cursor, or no point, cancels the mode.
+/// `None` for `at` leaves a ground cursor up and cancels any other.
+pub(crate) fn place_ground_cast(
+    ladder: &mut crate::spell::CastLadder,
+    at: Option<Option<[f32; 3]>>,
+) {
+    if !ladder.ground.active() {
+        return;
+    }
+    let Some((spell_id, commit)) = ladder.ground.pending_for(TargetingWants::Location) else {
+        ladder.ground.clear();
+        return;
+    };
+    let Some(at) = at else {
+        return;
+    };
+    match at.and_then(|at| ladder.ground.location_bind(at).map(|b| (at, b))) {
+        Some((at, bound)) => {
+            debug!(
+                "ext: ground cast {spell_id} placed at wow ({:.2}, {:.2}, {:.2})",
+                at[0], at[1], at[2]
+            );
+            ladder.commit_targeted(spell_id, commit, bound);
+        }
+        None => ladder.ground.clear(),
+    }
+}
+
 /// The object leg. A left-click on an object goes `0x492ce0` → `0x4925d0` → `SetSelection
 /// 0x493540`, whose first act while targeting is `BindTarget 0x6e5b40` and return, so the click
 /// never changes the player's target and never reaches the GameObject's unselectable check.

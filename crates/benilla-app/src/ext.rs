@@ -129,6 +129,22 @@ pub struct ExtCast {
     pub spell_id: u32,
     pub target: Option<u64>,
     pub item: Option<ItemUse>,
+    /// What to do with a targeting cursor the cast raises; `None` leaves it to the player.
+    pub place: Option<ExtPlace>,
+}
+
+/// What to do with the targeting cursor an [`ExtCast`] raised, applied right after its send: a
+/// ground-target spell's cursor is committed at the point, as a terrain click
+/// commits it (`BindLocation 0x6e60f0`); any other cursor still up is cancelled (`StopTargeting
+/// 0x6e4900`), unless the ask is [`ExtPlace::KeepGround`].
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum ExtPlace {
+    /// Commit at a WoW-space point.
+    At([f32; 3]),
+    /// Commit where the cursor ray hits the world; with no hit, cancel.
+    Cursor,
+    /// Leave a ground cursor up for the player; cancel any other.
+    KeepGround,
 }
 
 /// Set raid mark `icon` (0-7, star to skull) on `guid` (0 clears it) in the client's own table,
@@ -291,9 +307,11 @@ fn apply_ext_combat_text(
     }
 }
 
-/// Send this frame's [`ExtCast`]s through the ladder, in order.
+/// Send this frame's [`ExtCast`]s through the ladder, in order, each followed by its
+/// [`ExtPlace`].
 pub(crate) fn apply_ext_casts(
     mut casts: MessageReader<ExtCast>,
+    occlusion: Res<crate::target::PickOcclusion>,
     mut cast: crate::spell::ScriptCast,
 ) {
     for request in casts.read() {
@@ -304,6 +322,15 @@ pub(crate) fn apply_ext_casts(
             None => targeting.context(),
         };
         ladder.send_requeued(request.spell_id, &ctx, commit);
+        let Some(place) = request.place else {
+            continue;
+        };
+        let at = match place {
+            ExtPlace::At(at) => Some(Some(at)),
+            ExtPlace::Cursor => Some(occlusion.point.map(benilla_assets::coords::bevy_to_wow)),
+            ExtPlace::KeepGround => None,
+        };
+        crate::spell::targeting::world::place_ground_cast(ladder, at);
     }
 }
 

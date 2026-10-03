@@ -119,13 +119,18 @@ pub fn player_bits(mirror: &Mirror) -> (u32, u32) {
 /// `FindSkillIDForSpell`: the skill line of a spell's `SkillLineAbility` row, preferring the row
 /// whose masks match the player, else the first.
 pub fn skill_for_spell(db: &Databases, mirror: &Mirror, spell_id: u32) -> u32 {
+    skill_for_spell_bits(db, player_bits(mirror), spell_id)
+}
+
+/// [`skill_for_spell`] for given [`player_bits`].
+pub fn skill_for_spell_bits(db: &Databases, bits: (u32, u32), spell_id: u32) -> u32 {
     if spell_id == 0 {
         return 0;
     }
     let Some(sla) = db.get("SkillLineAbility") else {
         return 0;
     };
-    let (class_bit, race_bit) = player_bits(mirror);
+    let (class_bit, race_bit) = bits;
     let mut fallback = 0;
     for r in sla.rows() {
         if r.u32(sla_col::SPELL) != spell_id {

@@ -7,7 +7,9 @@ use super::{as_string, atoi, is_number, to_int, Api};
 
 mod book;
 mod cast;
+mod castat;
 pub(crate) mod data;
+mod description;
 mod info;
 mod state;
 
@@ -17,6 +19,8 @@ pub(super) fn install(api: &Api) -> mlua::Result<()> {
     book::install(api)?;
     state::install(api)?;
     cast::install(api)?;
+    description::install(api)?;
+    castat::install(api)?;
     Ok(())
 }
 

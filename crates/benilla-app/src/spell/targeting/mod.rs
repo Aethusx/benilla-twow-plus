@@ -32,7 +32,7 @@ mod corpse;
 mod cursor;
 mod item;
 mod pick;
-mod world;
+pub(crate) mod world;
 
 #[cfg(test)]
 pub(crate) use corpse::fixture as corpse_fixture;
