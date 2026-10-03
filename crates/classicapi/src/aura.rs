@@ -340,10 +340,106 @@ fn turtle_dangling_combo(spell: u32) -> Option<(i32, i32)> {
     matches!(spell, 1079 | 9492 | 9493 | 9752 | 9894 | 9896).then_some((8000, 18000))
 }
 
+/// The entries by stable index, with each unit's indices in insertion order: a lookup reads only
+/// its unit's few entries.
+#[derive(Default)]
+struct Slab {
+    slots: Vec<Option<Entry>>,
+    free: Vec<usize>,
+    by_target: HashMap<u64, Vec<usize>>,
+    len: usize,
+}
+
+impl Slab {
+    fn len(&self) -> usize {
+        self.len
+    }
+
+    fn insert(&mut self, e: Entry) -> usize {
+        let i = match self.free.pop() {
+            Some(i) => {
+                self.slots[i] = Some(e);
+                i
+            }
+            None => {
+                self.slots.push(Some(e));
+                self.slots.len() - 1
+            }
+        };
+        self.by_target.entry(e.target).or_default().push(i);
+        self.len += 1;
+        i
+    }
+
+    fn remove(&mut self, i: usize) {
+        let Some(e) = self.slots.get_mut(i).and_then(Option::take) else {
+            return;
+        };
+        if let Some(ids) = self.by_target.get_mut(&e.target) {
+            ids.retain(|x| *x != i);
+            if ids.is_empty() {
+                self.by_target.remove(&e.target);
+            }
+        }
+        self.free.push(i);
+        self.len -= 1;
+    }
+
+    fn get(&self, i: usize) -> Option<&Entry> {
+        self.slots.get(i).and_then(Option::as_ref)
+    }
+
+    fn get_mut(&mut self, i: usize) -> Option<&mut Entry> {
+        self.slots.get_mut(i).and_then(Option::as_mut)
+    }
+
+    /// The unit's entry indices, oldest first.
+    fn of(&self, target: u64) -> Vec<usize> {
+        self.by_target.get(&target).cloned().unwrap_or_default()
+    }
+
+    fn iter(&self) -> impl Iterator<Item = &Entry> {
+        self.slots.iter().flatten()
+    }
+
+    fn iter_mut(&mut self) -> impl Iterator<Item = &mut Entry> {
+        self.slots.iter_mut().flatten()
+    }
+
+    fn retain(&mut self, mut keep: impl FnMut(&Entry) -> bool) {
+        let gone: Vec<usize> = self
+            .slots
+            .iter()
+            .enumerate()
+            .filter_map(|(i, e)| e.as_ref().filter(|e| !keep(e)).map(|_| i))
+            .collect();
+        for i in gone {
+            self.remove(i);
+        }
+    }
+
+    fn clear(&mut self) {
+        *self = Self::default();
+    }
+}
+
+impl std::ops::Index<usize> for Slab {
+    type Output = Entry;
+    fn index(&self, i: usize) -> &Entry {
+        self.get(i).expect("live aura cache entry")
+    }
+}
+
+impl std::ops::IndexMut<usize> for Slab {
+    fn index_mut(&mut self, i: usize) -> &mut Entry {
+        self.get_mut(i).expect("live aura cache entry")
+    }
+}
+
 /// The cache and every rule that edits it.
 pub struct Source {
     epoch: Instant,
-    entries: Vec<Entry>,
+    entries: Slab,
     recent: [(u32, u64); RECENT_CAST_COUNT],
     recent_cursor: usize,
     mods: Vec<DurationMod>,
@@ -374,7 +470,7 @@ impl Default for Source {
     fn default() -> Self {
         Self {
             epoch: Instant::now(),
-            entries: Vec::new(),
+            entries: Slab::default(),
             recent: [(0, 0); RECENT_CAST_COUNT],
             recent_cursor: 0,
             mods: Vec::new(),
@@ -489,34 +585,33 @@ impl Source {
     // ---- Lookup ----
 
     fn find_by_caster(&self, target: u64, spell: u32, caster: u64) -> Option<usize> {
-        self.entries
-            .iter()
-            .position(|e| e.target == target && e.spell == spell && e.caster == caster)
+        self.entries.of(target).into_iter().find(|&i| {
+            let e = &self.entries[i];
+            e.spell == spell && e.caster == caster
+        })
     }
 
     fn find_by_slot(&self, target: u64, spell: u32, slot: i16) -> Option<usize> {
         if slot < 0 {
             return None;
         }
-        self.entries
-            .iter()
-            .position(|e| e.target == target && e.spell == spell && e.slot == slot)
+        self.entries.of(target).into_iter().find(|&i| {
+            let e = &self.entries[i];
+            e.spell == spell && e.slot == slot
+        })
     }
 
     /// The oldest unbound capture inside the seat window: two casters' same-spell auras seat in
     /// cast order, ascending slot.
     fn find_oldest_unbound(&self, target: u64, spell: u32, now: u64) -> Option<usize> {
         self.entries
-            .iter()
-            .enumerate()
-            .filter(|(_, e)| {
-                e.target == target
-                    && e.spell == spell
-                    && e.slot == SLOT_UNBOUND
-                    && now - e.stamp <= SEAT_WINDOW_MS
+            .of(target)
+            .into_iter()
+            .filter(|&i| {
+                let e = &self.entries[i];
+                e.spell == spell && e.slot == SLOT_UNBOUND && now - e.stamp <= SEAT_WINDOW_MS
             })
-            .min_by_key(|(_, e)| std::cmp::Reverse(now - e.stamp))
-            .map(|(i, _)| i)
+            .min_by_key(|&i| std::cmp::Reverse(now - self.entries[i].stamp))
     }
 
     /// The one entry for `(target, spell)`; none when there are several, which is two casters no
@@ -524,10 +619,10 @@ impl Source {
     fn find_sole(&self, target: u64, spell: u32) -> Option<usize> {
         let mut it = self
             .entries
-            .iter()
-            .enumerate()
-            .filter(|(_, e)| e.target == target && e.spell == spell);
-        let first = it.next()?.0;
+            .of(target)
+            .into_iter()
+            .filter(|&i| self.entries[i].spell == spell);
+        let first = it.next()?;
         it.next().is_none().then_some(first)
     }
 
@@ -536,34 +631,43 @@ impl Source {
             .or_else(|| self.find_sole(target, spell))
     }
 
-    /// A new entry's index: appended while there is room, else an expired entry no descriptor
-    /// backs, else the oldest orphan, else the oldest of all.
+    /// Whether an entry's unit is gone as far as the cache can tell: not held, not the player,
+    /// not a groupmate (whose out-of-range auras read the cache).
+    fn orphan(env: &Env, e: &Entry) -> bool {
+        e.target != env.mirror.player
+            && env.mirror.object(e.target).is_none()
+            && !env.mirror.group.contains(&e.target)
+    }
+
+    /// A new entry's index. When the table is full: first every orphan whose aura has no duration
+    /// or has run out, then every expired entry no descriptor backs, then the oldest entry.
+    /// Deviation: the DLL frees one slot per new entry, scanning the whole table each time;
+    /// reclaiming in bulk keeps a full table from costing a scan per aura.
     fn claim(&mut self, env: &Env, entry: Entry, now: u64) -> usize {
-        if self.entries.len() < CACHE_SIZE {
-            self.entries.push(entry);
-            return self.entries.len() - 1;
+        if self.entries.len() >= CACHE_SIZE {
+            self.entries
+                .retain(|e| !(Self::orphan(env, e) && (e.expiration == 0 || now >= e.expiration)));
         }
-        let expired = self.entries.iter().position(|e| {
-            e.expiration != 0 && now >= e.expiration && !env.descriptor_lists(e.target, e.spell)
-        });
-        let i = expired.unwrap_or_else(|| {
-            let orphan = self
+        if self.entries.len() >= CACHE_SIZE {
+            self.entries.retain(|e| {
+                e.expiration == 0 || now < e.expiration || env.descriptor_lists(e.target, e.spell)
+            });
+        }
+        while self.entries.len() >= CACHE_SIZE {
+            let oldest = self
                 .entries
+                .slots
                 .iter()
                 .enumerate()
-                .filter(|(_, e)| !env.descriptor_lists(e.target, e.spell))
-                .min_by_key(|(_, e)| e.stamp)
+                .filter_map(|(i, e)| e.as_ref().map(|e| (i, e.stamp)))
+                .min_by_key(|(_, stamp)| *stamp)
                 .map(|(i, _)| i);
-            orphan.unwrap_or_else(|| {
-                self.entries
-                    .iter()
-                    .enumerate()
-                    .min_by_key(|(_, e)| e.stamp)
-                    .map_or(0, |(i, _)| i)
-            })
-        });
-        self.entries[i] = entry;
-        i
+            match oldest {
+                Some(i) => self.entries.remove(i),
+                None => break,
+            }
+        }
+        self.entries.insert(entry)
     }
 
     // ---- Writes ----
@@ -807,9 +911,9 @@ impl Source {
             .collect();
         for m in rules {
             for &t in targets {
-                let hit = self.entries.iter().position(|e| {
-                    e.target == t
-                        && (e.caster == 0 || e.caster == caster)
+                let hit = self.entries.of(t).into_iter().find(|&i| {
+                    let e = &self.entries[i];
+                    (e.caster == 0 || e.caster == caster)
                         && affected_matches(
                             env.rec(e.spell).as_ref(),
                             m.affected_family,
@@ -920,9 +1024,9 @@ impl Source {
         caster: u64,
         now: u64,
     ) {
-        for i in 0..self.entries.len() {
+        for i in self.entries.of(target) {
             let e = self.entries[i];
-            if e.target != target || e.caster != caster || e.expiration == 0 {
+            if e.caster != caster || e.expiration == 0 {
                 continue;
             }
             let Some(rec) = env.rec(e.spell) else {
@@ -1058,9 +1162,9 @@ impl Source {
         }
         let now = self.now_ms();
         let mut n = 0;
-        for i in 0..self.entries.len() {
+        for i in self.entries.of(unit) {
             let e = self.entries[i];
-            if e.target != unit || e.duration == 0 {
+            if e.duration == 0 {
                 continue;
             }
             if e.caster != attacker && !(adopt && e.caster == 0) {
@@ -1139,11 +1243,8 @@ impl Source {
         now: u64,
     ) {
         let me = env.player();
-        for i in 0..self.entries.len() {
+        for i in self.entries.of(victim) {
             let e = self.entries[i];
-            if e.target != victim {
-                continue;
-            }
             let mine = e.caster == me;
             if !mine && e.caster != 0 {
                 continue;
@@ -1421,7 +1522,7 @@ impl Source {
         }
         let now = self.now_ms();
         let mut touched = Vec::new();
-        for e in &mut self.entries {
+        for e in self.entries.iter_mut() {
             if e.caster == player && e.spell == spell {
                 e.expiration = now + u64::from(remaining_ms);
                 e.stamp = now;
@@ -1448,9 +1549,9 @@ impl Source {
             return 0;
         }
         let now = self.now_ms();
-        let hit = self.entries.iter().position(|e| {
-            e.target == unit
-                && (e.caster == 0 || e.caster == caster)
+        let hit = self.entries.of(unit).into_iter().find(|&i| {
+            let e = &self.entries[i];
+            (e.caster == 0 || e.caster == caster)
                 && e.duration != 0
                 && affected_matches(env.rec(e.spell).as_ref(), family, mask, icon)
         });
@@ -1490,16 +1591,20 @@ impl Source {
             return;
         }
         let now = self.now_ms();
-        self.entries.retain(|e| {
-            if e.target != unit || now - e.stamp < EVICT_GRACE_MS {
-                return true;
+        for i in self.entries.of(unit) {
+            let e = self.entries[i];
+            if now - e.stamp < EVICT_GRACE_MS {
+                continue;
             }
-            if e.slot >= 0 {
+            let present = if e.slot >= 0 {
                 slots[e.slot as usize] == e.spell
             } else {
                 slots.contains(&e.spell)
+            };
+            if !present {
+                self.entries.remove(i);
             }
-        });
+        }
     }
 
     /// `Enumerate`: the unexpired entries on `unit` of one polarity, in cache order.
@@ -1511,12 +1616,11 @@ impl Source {
         };
         let now = self.now_ms();
         self.entries
-            .iter()
-            .filter(|e| {
-                e.target == unit && e.kind == want && (e.expiration == 0 || now < e.expiration)
-            })
+            .of(unit)
+            .into_iter()
+            .map(|i| self.entries[i])
+            .filter(|e| e.kind == want && (e.expiration == 0 || now < e.expiration))
             .take(AURA_TOTAL)
-            .copied()
             .collect()
     }
 
@@ -1580,8 +1684,14 @@ impl Source {
         self.last_map = Some(map);
         let now = self.now_ms();
         self.apply_tick_compressions(env, now);
+        // Timed entries run out unless their unit still lists them; an orphan's entry with no
+        // duration goes too, as nothing would ever remove it (see `claim`'s deviation).
         self.entries.retain(|e| {
-            e.expiration == 0 || now < e.expiration || env.descriptor_lists(e.target, e.spell)
+            let expired = e.expiration != 0 && now >= e.expiration;
+            if Self::orphan(env, e) {
+                return !(expired || e.expiration == 0);
+            }
+            !expired || env.descriptor_lists(e.target, e.spell)
         });
         self.group.retain(|_, s| now - s.1 <= GROUP_SNAPSHOT_TTL_MS);
         self.carnage_tick(env, now);

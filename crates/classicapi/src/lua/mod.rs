@@ -65,9 +65,27 @@ impl<'a> Api<'a> {
         R: IntoLuaMulti,
         F: Fn(&Lua, A) -> mlua::Result<R> + 'static,
     {
-        let func = self.lua.create_function(f)?;
+        let func = self.timed(name.to_string(), f)?;
         self.g.raw_set(name, func.clone())?;
         self.namespace(MIRROR)?.raw_set(name, func)
+    }
+
+    /// The native as a Lua function, timed into [`crate::prof`] when that is on.
+    fn timed<A, R, F>(&self, name: String, f: F) -> mlua::Result<mlua::Function>
+    where
+        A: mlua::FromLuaMulti,
+        R: IntoLuaMulti,
+        F: Fn(&Lua, A) -> mlua::Result<R> + 'static,
+    {
+        if !crate::prof::enabled() {
+            return self.lua.create_function(f);
+        }
+        self.lua.create_function(move |lua, a: A| {
+            let started = std::time::Instant::now();
+            let out = f(lua, a);
+            crate::prof::native(&name, started.elapsed());
+            out
+        })
     }
 
     /// `RegisterTableFunction`: `_G[ns][name]`, mirrored at `ClassicAPI[ns][name]`.
@@ -77,7 +95,7 @@ impl<'a> Api<'a> {
         R: IntoLuaMulti,
         F: Fn(&Lua, A) -> mlua::Result<R> + 'static,
     {
-        let func = self.lua.create_function(f)?;
+        let func = self.timed(format!("{ns}.{name}"), f)?;
         self.namespace(ns)?.raw_set(name, func.clone())?;
         let mirror = self.namespace(MIRROR)?;
         ensure_table(self.lua, &mirror, ns)?.raw_set(name, func)

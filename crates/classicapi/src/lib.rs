@@ -27,6 +27,7 @@ pub mod items;
 mod lua;
 pub mod mirror;
 mod net;
+pub mod prof;
 pub mod spellmod;
 pub mod spells;
 pub mod talents;
@@ -214,6 +215,7 @@ fn frame(
         map,
     } = inputs;
     let now = Instant::now();
+    let mut lap = prof::Lap::new();
     // `GetTime()` read with the lock free, so the mirror can put instants on its clock.
     let ui_now = script.as_deref().and_then(|s| {
         s.lua()
@@ -238,6 +240,7 @@ fn frame(
         let mut st = ca.lock();
         st.mirror.refresh(&view, &world, &range, now)
     };
+    lap.mark("mirror");
     let aura_signals = ca.with_auras(|auras, env| {
         auras.turtle |= turtle;
         if auras.turtle {
@@ -262,6 +265,7 @@ fn frame(
         auras.tick(env);
         auras.take_signals()
     });
+    lap.mark("auras");
     let (events, cancel, focus_lost) = {
         let mut st = ca.lock();
         st.mirror.map_id = map.as_deref().map_or(0, |m| m.0);
@@ -323,6 +327,7 @@ fn frame(
             focus_lost,
         )
     };
+    lap.mark("state");
     for spell_id in cancel {
         cancels.write(ExtCancelAura { spell_id });
     }
@@ -342,10 +347,13 @@ fn frame(
     for (name, args) in events {
         script.queue_event(name, args);
     }
+    lap.mark("plates");
     lua::time::tick(script.lua());
+    lap.mark("timers");
     for (name, args) in lua::lossofcontrol::tick(&ca) {
         script.queue_event(name, args);
     }
+    lap.mark("loc");
     // The template loads: the asks benilla sends, and the events their answers fire.
     let (loaded, asks) = ca.items.lock().tick();
     for id in asks {
@@ -363,6 +371,7 @@ fn frame(
             script.queue_event("UNIT_AURA", vec![ScriptValue::Str(token)]);
         }
     }
+    lap.mark("items+signals");
 }
 
 /// The token table's per-frame half: the marks off the raid-target table, and the focus dropped
