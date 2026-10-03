@@ -26,7 +26,54 @@ pub fn register(app: &mut App) {
         .net_handler(K::SpellDelayed, on_cast)
         .net_handler(K::ChannelStart, on_cast)
         .net_handler(K::SpellFailedOther, on_cast)
-        .net_handler(K::CastResult, on_cast);
+        .net_handler(K::CastResult, on_cast)
+        .net_handler(K::CreatureName, on_template)
+        .net_handler(K::GameObjectInfo, on_template)
+        .net_handler(K::QuestTemplate, on_template);
+}
+
+/// The template answers, for `Cache::QueryLoad`'s records and loads.
+fn on_template(In(ev): In<SessionEvent>, ca: Res<Ca>) {
+    use crate::templates::{Creature, GameObject};
+    let mut st = ca.lock();
+    match ev {
+        SessionEvent::CreatureName {
+            entry,
+            name,
+            subname,
+            creature_type,
+            pet_family,
+            rank,
+            display_id,
+            ..
+        } => {
+            let rec = name.map(|name| Creature {
+                name,
+                subname: subname.unwrap_or_default(),
+                creature_type: creature_type.unwrap_or(0),
+                family: pet_family,
+                rank,
+                display_id,
+            });
+            st.templates.on_creature(entry, rec);
+        }
+        SessionEvent::GameObjectInfo {
+            entry,
+            type_id,
+            display_id,
+            name,
+            ..
+        } => st.templates.on_gameobject(
+            entry,
+            GameObject {
+                name,
+                type_id,
+                display_id,
+            },
+        ),
+        SessionEvent::QuestTemplate(q) => st.templates.on_quest(q),
+        _ => {}
+    }
 }
 
 /// The cast tracker's packets (`Spell::Cast`'s dispatch subscriber, `SpellFailed_h` for a

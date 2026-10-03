@@ -13,7 +13,7 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Instant;
 
 use benilla_app::ext::{
-    CastOutcome, ExtAttack, ExtCancelAura, ExtCast, ExtCastNote, ExtCastSet, ExtRange,
+    CastOutcome, ExtAttack, ExtCancelAura, ExtCast, ExtCastNote, ExtCastSet, ExtQuery, ExtRange,
     ExtUnitTokens, ExtUsable, ExtView, ExtWorld, ScriptInstallers, ScriptValue, UiScript,
 };
 use bevy::prelude::*;
@@ -32,6 +32,7 @@ pub mod prof;
 pub mod spellmod;
 pub mod spells;
 pub mod talents;
+pub mod templates;
 pub mod tokens;
 pub mod transpile;
 
@@ -61,6 +62,8 @@ pub struct State {
     pub(crate) attacks: Vec<ExtAttack>,
     /// The six modifier keys held, `Input::Modifier`'s mask.
     pub(crate) modifiers: u8,
+    /// The creature, gameobject and quest records and their loads (`Cache::QueryLoad`).
+    pub templates: templates::Templates,
     /// The nameplate diff: last frame's `(guid, frame)` pairs and every frame ever announced.
     plates_last: Vec<(u64, u32)>,
     plates_seen: std::collections::HashSet<u32>,
@@ -225,6 +228,7 @@ fn frame(
     mut cancels: MessageWriter<ExtCancelAura>,
     mut casts: MessageWriter<ExtCast>,
     mut attacks: MessageWriter<ExtAttack>,
+    mut queries: MessageWriter<ExtQuery>,
     keys: Option<Res<bevy::input::ButtonInput<bevy::input::keyboard::KeyCode>>>,
     mut ext_tokens: ResMut<ExtUnitTokens>,
     mut notes: MessageReader<ExtCastNote>,
@@ -306,7 +310,7 @@ fn frame(
     });
     lap.mark("cast");
     let mask = keys.as_deref().map_or(0, lua::misc::modifier_mask);
-    let (events, cancel, queued, attack, focus_lost) = {
+    let (events, cancel, queued, attack, loads, focus_lost) = {
         let mut st = ca.lock();
         st.mirror.map_id = map.as_deref().map_or(0, |m| m.0);
         st.mirror.indoors = (st.mirror.player != 0).then(|| point.interior().is_some());
@@ -378,6 +382,7 @@ fn frame(
             std::mem::take(&mut st.cancels),
             std::mem::take(&mut st.casts),
             std::mem::take(&mut st.attacks),
+            st.templates.tick(now),
             focus_lost,
         )
     };
@@ -387,6 +392,8 @@ fn frame(
     }
     casts.write_batch(queued);
     attacks.write_batch(attack);
+    let (asks, load_results) = loads;
+    queries.write_batch(asks);
     let Some(mut script) = script else {
         return;
     };
@@ -429,6 +436,12 @@ fn frame(
     }
     for (name, args) in cast_events(&ca, script.lua(), cast_fires) {
         script.queue_event(name, args);
+    }
+    for (name, id, ok) in load_results {
+        script.queue_event(
+            name,
+            vec![ScriptValue::Number(f64::from(id)), ScriptValue::Bool(ok)],
+        );
     }
     lap.mark("items+signals");
 }

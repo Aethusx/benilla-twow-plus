@@ -153,6 +153,16 @@ pub enum ExtPlace {
 #[derive(Message, Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ExtAttack(pub Option<u64>);
 
+/// Ask the server for a template by id, as the client's caches ask on a miss: `CMSG_CREATURE_QUERY`
+/// and `CMSG_GAMEOBJECT_QUERY` with no guid, `CMSG_QUEST_QUERY`. The answer arrives as the usual
+/// session event, which benilla's own caches take too.
+#[derive(Message, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ExtQuery {
+    Creature(u32),
+    GameObject(u32),
+    Quest(u32),
+}
+
 /// Set raid mark `icon` (0-7, star to skull) on `guid` (0 clears it) in the client's own table,
 /// with no packet: what `MSG_RAID_TARGET_UPDATE` would have written.
 #[derive(Message, Clone, Copy, Debug)]
@@ -311,6 +321,21 @@ fn apply_ext_attacks(
     }
 }
 
+fn apply_ext_queries(mut asks: MessageReader<ExtQuery>, net: Res<crate::net::NetCommands>) {
+    for ask in asks.read() {
+        let cmd = match *ask {
+            ExtQuery::Creature(entry) => {
+                crate::net::ClientCommand::CreatureQuery { entry, guid: 0 }
+            }
+            ExtQuery::GameObject(entry) => {
+                crate::net::ClientCommand::GameObjectQuery { entry, guid: 0 }
+            }
+            ExtQuery::Quest(quest) => crate::net::ClientCommand::QuestQuery { quest },
+        };
+        let _ = net.0.send(cmd);
+    }
+}
+
 fn apply_ext_selects(
     mut selects: MessageReader<ExtSelect>,
     mut commit: crate::target::SelectCommit,
@@ -378,6 +403,7 @@ impl Plugin for ExtPlugin {
             .init_resource::<CastGateHook>()
             .add_message::<ExtCast>()
             .add_message::<ExtAttack>()
+            .add_message::<ExtQuery>()
             .add_message::<ExtRaidMark>()
             .add_message::<ExtCancelAura>()
             .add_message::<ExtSelect>()
@@ -394,6 +420,7 @@ impl Plugin for ExtPlugin {
                     .before(apply_ext_cancel_auras)
                     .before(apply_ext_selects)
                     .before(apply_ext_attacks)
+                    .before(apply_ext_queries)
                     .before(apply_ext_combat_text),
             )
             // `apply_ext_casts` runs in the target chain, ahead of the frame's script calls: a
@@ -405,6 +432,7 @@ impl Plugin for ExtPlugin {
                     apply_ext_cancel_auras,
                     apply_ext_selects.in_set(crate::target::TargetUpdate),
                     apply_ext_attacks.after(apply_ext_selects),
+                    apply_ext_queries,
                     apply_ext_combat_text.before(crate::ui_pass::UiQuadAppend),
                 ),
             );

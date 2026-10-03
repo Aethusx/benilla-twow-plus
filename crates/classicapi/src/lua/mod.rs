@@ -20,6 +20,7 @@ mod baselib;
 mod color;
 mod container;
 mod core;
+mod creature;
 pub(crate) mod equipmentset;
 mod frame;
 mod info;
@@ -181,6 +182,7 @@ pub fn install(ca: &Ca, script: &mut UiScript) {
             info::install(&api)?;
             color::install(&api)?;
             playerinfo::install(&api)?;
+            creature::install(&api)?;
             unit::install(&api)?;
             Ok(api.private)
         })();
