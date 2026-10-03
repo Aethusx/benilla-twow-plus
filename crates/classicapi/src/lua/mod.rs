@@ -27,6 +27,7 @@ mod info;
 pub(crate) mod item;
 pub(crate) mod lossofcontrol;
 pub(crate) mod luasyntax;
+mod macro_api;
 pub(crate) mod misc;
 mod nameplate;
 mod playerinfo;
@@ -183,6 +184,7 @@ pub fn install(ca: &Ca, script: &mut UiScript) {
             color::install(&api)?;
             playerinfo::install(&api)?;
             creature::install(&api)?;
+            macro_api::install(&api)?;
             unit::install(&api)?;
             Ok(api.private)
         })();
