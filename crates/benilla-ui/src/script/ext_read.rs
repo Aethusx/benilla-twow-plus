@@ -174,3 +174,13 @@ pub fn player_aura_expiration(lua: &Lua, spell_id: u32) -> Option<f64> {
         .find(|a| a.spell_id == spell_id)
         .map(|a| a.expiration_time)
 }
+
+/// The player's proficiency subclass mask for an item class (`SMSG_SET_PROFICIENCY`,
+/// `0xc4d4a0[class]`); `None` before the server announced it.
+pub fn proficiency_mask(lua: &Lua, item_class: u32) -> Option<u32> {
+    lua.app_data_ref::<Model>()?
+        .player_req
+        .proficiency
+        .get(&item_class)
+        .copied()
+}

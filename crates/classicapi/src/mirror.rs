@@ -289,6 +289,8 @@ pub struct Mirror {
     pub usable: HashMap<u32, (bool, bool)>,
     /// A native asked for usability; the walk runs every frame until then.
     pub usable_wanted_until: Option<Instant>,
+    /// Spells outside the book whose verdicts were asked for (item use spells).
+    pub usable_extra: Vec<u32>,
     usable_at: Option<Instant>,
     /// The instant this frame mirrored at, and what `GetTime()` read then.
     pub clock: Option<(Instant, f64)>,

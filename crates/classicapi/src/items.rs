@@ -190,11 +190,9 @@ impl ItemSnap {
 
 /// The item's base template name, asking for the template when it is not cached.
 pub fn base_name(lua: &Lua, entry: u32) -> Option<String> {
-    let t = benilla_ui::script::ext_read::item_template(lua, entry);
-    if t.is_none() {
-        benilla_ui::script::ext_read::ask_item(lua, entry);
-    }
-    t.map(|t| t.name).filter(|n| !n.is_empty())
+    crate::itemdb::record(lua, entry)
+        .map(|t| t.name.clone())
+        .filter(|n| !n.is_empty())
 }
 
 /// The engine's name formatter `0x5d8b00(entry, randomPropertyId)`: `ITEM_SUFFIX_TEMPLATE`'s
@@ -227,11 +225,7 @@ pub fn quality_color(quality: u32) -> &'static str {
 /// `0x52adb0`'s hyperlink, `|c<q>|Hitem:id:enchant:roll:factor|h[name]|h|r`, as benilla builds
 /// every item link.
 pub fn link(lua: &Lua, entry: u32, random_property: i32) -> Option<String> {
-    let t = benilla_ui::script::ext_read::item_template(lua, entry);
-    let Some(t) = t else {
-        benilla_ui::script::ext_read::ask_item(lua, entry);
-        return None;
-    };
+    let t = crate::itemdb::record(lua, entry)?;
     let name = display_name(lua, entry, random_property)?;
     Some(format!(
         "|c{}|Hitem:{entry}:0:{random_property}:0|h[{name}]|h|r",

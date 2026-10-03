@@ -17,7 +17,15 @@ pub fn register(app: &mut App) {
         .net_handler(K::MirrorTimerStop, on_mirror_timer)
         .net_handler(K::SpellGo, on_spell_go)
         .net_handler(K::AttackerState, on_attacker_state)
-        .net_handler(K::ChannelUpdate, on_channel_update);
+        .net_handler(K::ChannelUpdate, on_channel_update)
+        .net_handler(K::ItemTemplate, on_item_template);
+}
+
+/// `SMSG_ITEM_QUERY_SINGLE_RESPONSE`: the record `Item::PeekRecord` reads, or "no such item".
+fn on_item_template(In(ev): In<SessionEvent>, ca: Res<Ca>) {
+    if let SessionEvent::ItemTemplate { entry, info } = ev {
+        ca.items.lock().answer(entry, info.map(|b| *b));
+    }
 }
 
 /// `SMSG_SPELL_GO`'s hit list, the one place an aura's caster and duration show

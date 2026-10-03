@@ -14,9 +14,12 @@ use crate::Ca;
 
 mod args;
 mod aura;
+mod container;
 mod core;
+pub(crate) mod equipmentset;
+pub(crate) mod item;
 mod nameplate;
-mod spell;
+pub(crate) mod spell;
 pub(crate) mod unit;
 
 pub(crate) use args::*;
@@ -109,6 +112,7 @@ pub fn install(ca: &Ca, script: &mut UiScript) {
         .unwrap_or(mlua::Value::Nil);
     ca.tokens.lock().guid_literals = matches!(superwow, mlua::Value::Nil);
     script.set_unit_token_extension(ca.tokens.extension());
+    script.lua().set_app_data(ca.items.clone());
     let bootstraps = {
         let lua = script.lua();
         let result = (|| -> mlua::Result<Table> {
@@ -117,6 +121,9 @@ pub fn install(ca: &Ca, script: &mut UiScript) {
             spell::install(&api)?;
             nameplate::install(&api)?;
             aura::install(&api)?;
+            item::install(&api)?;
+            container::install(&api)?;
+            equipmentset::install(&api)?;
             unit::install(&api)?;
             Ok(api.private)
         })();

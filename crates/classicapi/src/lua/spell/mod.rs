@@ -6,7 +6,7 @@ use mlua::{Lua, Value};
 use super::{as_string, atoi, is_number, to_int, Api};
 
 mod book;
-mod data;
+pub(crate) mod data;
 mod info;
 mod state;
 

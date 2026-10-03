@@ -22,6 +22,7 @@ pub mod aura;
 pub mod cooldown;
 pub mod dbc;
 pub mod guid;
+pub mod itemdb;
 pub mod items;
 mod lua;
 pub mod mirror;
@@ -65,6 +66,14 @@ pub struct State {
     mouseover_unit: bool,
     /// Every aura's caster and expiry (`Aura::Source`).
     pub auras: aura::Source,
+    /// `C_NewItems`' baseline and flags.
+    pub(crate) new_items: lua::item::NewItems,
+    /// `C_EquipmentSet`'s sets, loaded per character.
+    pub(crate) equipment_sets: lua::equipmentset::Store,
+    /// When the player first resolved, and whether the carried templates were warmed
+    /// (`Item::Data`'s owned prefetch, a second after entering the world).
+    in_world_at: Option<Instant>,
+    owned_warmed: bool,
 }
 
 /// One mirror timer as its last packet left it.
@@ -119,6 +128,8 @@ pub struct Ca {
     state: Arc<Mutex<State>>,
     pub tokens: tokens::Tokens,
     pub db: Arc<dbc::Databases>,
+    /// The item templates, behind their own lock.
+    pub items: itemdb::ItemDb,
 }
 
 impl Ca {
@@ -266,13 +277,37 @@ fn frame(
         }
         // `Unit::Mouseover`: the engine fires `UPDATE_MOUSEOVER_UNIT` on a gain only; a unit
         // mouseover lost (to nothing or a GameObject) fires it too, as retail does.
+        let State {
+            new_items, mirror, ..
+        } = &mut *st;
+        new_items.frame(mirror, now);
+        if std::mem::take(&mut st.new_items.fire) {
+            st.emit("BAG_NEW_ITEMS_UPDATED", vec![]);
+        }
+        // `Item::Data`'s owned prefetch: every carried template, a second into the world.
+        if st.mirror.player == 0 {
+            st.in_world_at = None;
+            st.owned_warmed = false;
+        } else if st.in_world_at.get_or_insert(now).elapsed() >= std::time::Duration::from_secs(1)
+            && !st.owned_warmed
+        {
+            st.owned_warmed = true;
+            let m = &st.mirror;
+            let mut owned: Vec<u32> = items::equipped(m).iter().map(|(_, it)| it.entry).collect();
+            owned.extend(items::bagged(m, 0..=4).iter().map(|(_, _, it)| it.entry));
+            let mut db = ca.items.lock();
+            for id in owned {
+                db.warm(id);
+            }
+        }
         let mouseover_unit = view.unit_guid("mouseover").is_some();
         if st.mouseover_unit && !mouseover_unit {
             st.emit("UPDATE_MOUSEOVER_UNIT", vec![]);
         }
         st.mouseover_unit = mouseover_unit;
-        let known = st.known.clone();
-        st.mirror.refresh_usable(&usable, &known, now);
+        let mut wanted = st.known.clone();
+        wanted.extend(st.mirror.usable_extra.iter().copied());
+        st.mirror.refresh_usable(&usable, &wanted, now);
         if let Some(t) = ui_now {
             st.mirror.clock = Some((now, t));
         }
@@ -300,6 +335,17 @@ fn frame(
     }
     for (name, args) in events {
         script.queue_event(name, args);
+    }
+    // The template loads: the asks benilla sends, and the events their answers fire.
+    let (loaded, asks) = ca.items.lock().tick();
+    for id in asks {
+        benilla_ui::script::ext_read::ask_item(script.lua(), id);
+    }
+    for (name, id, ok) in loaded {
+        script.queue_event(
+            name,
+            vec![ScriptValue::Number(f64::from(id)), ScriptValue::Bool(ok)],
+        );
     }
     // A cached duration edit has no descriptor write behind it: `UNIT_AURA` once per token.
     for guid in aura_signals {
