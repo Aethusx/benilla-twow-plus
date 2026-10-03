@@ -320,6 +320,8 @@ fn drive_vplates(
     mut bucket: Local<crate::smart_rect::SmartBucket>,
     group: Res<crate::ui_party::GroupState>,
     mut mouse_told: Local<crate::ui_script::VmMemo<Option<bool>>>,
+    // A crate on top's distance and per-unit filter ([`crate::ext::NameplateHook`]).
+    hook: Option<Res<crate::ext::NameplateHook>>,
 ) {
     plates.0.clear();
     plate_hover.0 = None;
@@ -406,7 +408,14 @@ fn drive_vplates(
         if store.is_some_and(|s| s.0.unit_is_ghost_visual()) {
             continue;
         }
-        if (tf.translation - self_tf.translation).length_squared() > MAX_DIST_SQ {
+        let max_dist_sq = hook
+            .as_ref()
+            .and_then(|h| h.max_distance)
+            .map_or(MAX_DIST_SQ, |d| d * d);
+        if (tf.translation - self_tf.translation).length_squared() > max_dist_sq {
+            continue;
+        }
+        if hook.as_ref().is_some_and(|h| h.hidden.contains(&guid.0)) {
             continue;
         }
         // A CREATEDBY owner, no SUMMONEDBY owner and flags bit 9 (`0x200`): no plate in either

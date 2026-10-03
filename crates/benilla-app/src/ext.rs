@@ -134,6 +134,39 @@ pub struct ExtRaidMark {
     pub guid: u64,
 }
 
+/// Select the unit `guid` names, as `TargetUnit` does; an unstreamed or non-unit guid is a no-op.
+#[derive(Message, Clone, Copy, Debug)]
+pub struct ExtSelect {
+    pub guid: u64,
+}
+
+/// Float a combat text over `guid` (our own player when `None`) through benilla's floating text,
+/// in category `category` (0 number, 1 absorb, 2 crit, 3 miss word, 4 XP, 5 honor) and an
+/// optional `0xAARRGGBB` colour.
+#[derive(Message, Clone, Debug)]
+pub struct ExtCombatText {
+    pub guid: Option<u64>,
+    pub text: String,
+    pub category: u8,
+    pub color: Option<u32>,
+}
+
+/// What a crate on top changes in the floating combat text; the default changes nothing.
+#[derive(Resource, Default)]
+pub struct CombatTextHook {
+    /// Drop category 4, the XP numbers.
+    pub hide_exp: bool,
+}
+
+/// What a crate on top changes in the nameplates; the default changes nothing.
+#[derive(Resource, Default)]
+pub struct NameplateHook {
+    /// The plate range in yards, in place of the reference's 20.
+    pub max_distance: Option<f32>,
+    /// Units that get no plate this frame.
+    pub hidden: std::collections::HashSet<u64>,
+}
+
 /// Cancel our aura of `spell_id` (`CMSG_CANCEL_AURA`), as a right-click on its icon does.
 #[derive(Message, Clone, Copy, Debug)]
 pub struct ExtCancelAura {
@@ -199,6 +232,38 @@ fn apply_ext_cancel_auras(
     }
 }
 
+fn apply_ext_selects(
+    mut selects: MessageReader<ExtSelect>,
+    mut commit: crate::target::SelectCommit,
+) {
+    for select in selects.read() {
+        commit.select_unit(select.guid);
+    }
+}
+
+fn apply_ext_combat_text(
+    mut texts: MessageReader<ExtCombatText>,
+    mut spawns: MessageWriter<crate::combat_text::CombatTextSpawn>,
+    index: Res<crate::net::GuidIndex>,
+    me: Query<Entity, With<crate::net::SelfPlayer>>,
+) {
+    for t in texts.read() {
+        let anchor = match t.guid {
+            Some(guid) => index.0.get(&guid).copied(),
+            None => me.single().ok(),
+        };
+        let Some(anchor) = anchor else {
+            continue;
+        };
+        spawns.write(crate::combat_text::CombatTextSpawn {
+            anchor,
+            text: t.text.clone(),
+            category: t.category.min(5),
+            color: t.color,
+        });
+    }
+}
+
 /// Send this frame's [`ExtCast`]s through the ladder, in order.
 pub(crate) fn apply_ext_casts(
     mut casts: MessageReader<ExtCast>,
@@ -224,16 +289,30 @@ impl Plugin for ExtPlugin {
             .add_message::<ExtCast>()
             .add_message::<ExtRaidMark>()
             .add_message::<ExtCancelAura>()
+            .add_message::<ExtSelect>()
+            .add_message::<ExtCombatText>()
+            .init_resource::<CombatTextHook>()
+            .init_resource::<NameplateHook>()
             .configure_sets(
                 Update,
                 ExtCastSet
                     .before(apply_ext_casts)
                     .before(apply_ext_raid_marks)
-                    .before(apply_ext_cancel_auras),
+                    .before(apply_ext_cancel_auras)
+                    .before(apply_ext_selects)
+                    .before(apply_ext_combat_text),
             )
             // `apply_ext_casts` runs in the target chain, ahead of the frame's script calls: a
             // queued cast whose time came goes out before a press made this frame.
-            .add_systems(Update, (apply_ext_raid_marks, apply_ext_cancel_auras));
+            .add_systems(
+                Update,
+                (
+                    apply_ext_raid_marks,
+                    apply_ext_cancel_auras,
+                    apply_ext_selects.in_set(crate::target::TargetUpdate),
+                    apply_ext_combat_text.before(crate::ui_pass::UiQuadAppend),
+                ),
+            );
     }
 }
 
@@ -384,5 +463,63 @@ impl ExtView<'_, '_> {
     /// Whether `guid` is streamed.
     pub fn is_streamed(&self, guid: u64) -> bool {
         self.units.held(guid).is_some()
+    }
+}
+
+/// More read-only views: hostility, creature templates, orientation and the camera.
+#[derive(SystemParam)]
+pub struct ExtWorld<'w, 's> {
+    index: Res<'w, crate::net::GuidIndex>,
+    stores: Query<'w, 's, &'static ObjectStore>,
+    me: Query<'w, 's, &'static ObjectStore, With<crate::net::SelfPlayer>>,
+    factions: Option<Res<'w, crate::target::Factions>>,
+    reputations: Res<'w, crate::net::Reputations>,
+    names: Res<'w, crate::names::NameCache>,
+    camera: Query<'w, 's, &'static Transform, With<benilla_world::view::WorldCamera>>,
+    placed: Query<'w, 's, (&'static Guid, &'static GlobalTransform), With<ObjectStore>>,
+}
+
+impl ExtWorld<'_, '_> {
+    fn store(&self, guid: u64) -> Option<&ObjectStore> {
+        self.stores.get(*self.index.0.get(&guid)?).ok()
+    }
+
+    /// `CanAttack` from our player, as the TAB scan and the nameplates read it.
+    pub fn can_attack(&self, guid: u64) -> bool {
+        let Some(store) = self.store(guid) else {
+            return false;
+        };
+        crate::target::can_attack(
+            Some(store),
+            self.factions.as_deref(),
+            &self.reputations,
+            self.me.single().ok(),
+        )
+    }
+
+    /// A creature's `CreatureType.dbc` id and its rank (3 is a world boss), once its template has
+    /// been queried; `None` for a player or an unknown template.
+    pub fn creature(&self, guid: u64) -> Option<(u32, u32)> {
+        let store = self.store(guid)?;
+        let entry = store.0.object_entry()?;
+        let rec = self.names.creature_record(entry)?;
+        Some((
+            rec.creature_type,
+            crate::names::gated_rank(Some(rec), Some(store)),
+        ))
+    }
+
+    /// The world camera's position and forward direction.
+    pub fn camera(&self) -> Option<(Vec3, Vec3)> {
+        let t = self.camera.single().ok()?;
+        Some((t.translation, *t.forward()))
+    }
+
+    /// Every streamed object's position and rotation.
+    pub fn placements(&self) -> impl Iterator<Item = (u64, Vec3, Quat)> + '_ {
+        self.placed.iter().map(|(g, t)| {
+            let (_, rotation, translation) = t.to_scale_rotation_translation();
+            (g.0, translation, rotation)
+        })
     }
 }

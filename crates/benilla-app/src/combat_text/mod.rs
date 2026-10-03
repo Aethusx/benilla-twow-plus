@@ -147,6 +147,8 @@ pub(crate) fn float_combat_text(
     mut bucket: Local<crate::smart_rect::SmartBucket>,
     // Absent in a bare test world, which draws the default face.
     font: Option<Res<DamageTextFont>>,
+    // A crate on top's filter ([`crate::ext::CombatTextHook`]).
+    hook: Option<Res<crate::ext::CombatTextHook>>,
 ) {
     let now = time.elapsed_secs_f64();
     // Headless there is no camera: spawns and expiry run, nothing draws.
@@ -156,6 +158,9 @@ pub(crate) fn float_combat_text(
         .map(|(c, pose)| (c, GlobalTransform::from(*pose)));
     let viewport = cam.as_ref().and_then(|(c, _)| c.logical_viewport_size());
     for spawn in spawns.read() {
+        if spawn.category == 4 && hook.as_ref().is_some_and(|h| h.hide_exp) {
+            continue;
+        }
         let Some(slot) = free_slot(&texts.0, spawn.anchor) else {
             continue; // the 4-slot hard drop
         };
