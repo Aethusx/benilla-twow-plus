@@ -1,0 +1,152 @@
+//! ClassicAPI's Lua API, installed on each in-game VM before the interface loads. One module per
+//! source folder of the DLL; each registers its natives through [`Api`], which binds every name
+//! twice as the DLL's registrars do (`Game.cpp`): at its public place, and by value under
+//! `_G.ClassicAPI`, which nothing else writes, so `ClassicAPI.X == X` holds until something
+//! replaces the global.
+//!
+//! The bootstrap chunks are Lua run as `function(CA) ... end`, `CA` being the private table of
+//! internal natives, never published.
+
+use benilla_app::ext::UiScript;
+use mlua::{IntoLua, IntoLuaMulti, Lua, MultiValue, Table, Value};
+
+use crate::Ca;
+
+mod args;
+mod core;
+mod spell;
+
+pub(crate) use args::*;
+
+/// The escape-hatch table every registration is mirrored under.
+const MIRROR: &str = "ClassicAPI";
+
+/// The registrar: `_G`, the mirror, and the private table the bootstraps read.
+pub(crate) struct Api<'a> {
+    pub lua: &'a Lua,
+    pub ca: Ca,
+    g: Table,
+    /// `CA`, the bootstraps' private natives.
+    pub private: Table,
+}
+
+impl<'a> Api<'a> {
+    fn new(lua: &'a Lua, ca: &Ca) -> mlua::Result<Self> {
+        Ok(Self {
+            lua,
+            ca: ca.clone(),
+            g: lua.globals(),
+            private: lua.create_table()?,
+        })
+    }
+
+    /// `_G[name]`, a table, created empty when it is not one.
+    pub fn namespace(&self, name: &str) -> mlua::Result<Table> {
+        ensure_table(self.lua, &self.g, name)
+    }
+
+    /// `RegisterGlobalFunction`: `_G[name]`, mirrored.
+    pub fn global<A, R, F>(&self, name: &str, f: F) -> mlua::Result<()>
+    where
+        A: mlua::FromLuaMulti,
+        R: IntoLuaMulti,
+        F: Fn(&Lua, A) -> mlua::Result<R> + 'static,
+    {
+        let func = self.lua.create_function(f)?;
+        self.g.raw_set(name, func.clone())?;
+        self.namespace(MIRROR)?.raw_set(name, func)
+    }
+
+    /// `RegisterTableFunction`: `_G[ns][name]`, mirrored at `ClassicAPI[ns][name]`.
+    pub fn table<A, R, F>(&self, ns: &str, name: &str, f: F) -> mlua::Result<()>
+    where
+        A: mlua::FromLuaMulti,
+        R: IntoLuaMulti,
+        F: Fn(&Lua, A) -> mlua::Result<R> + 'static,
+    {
+        let func = self.lua.create_function(f)?;
+        self.namespace(ns)?.raw_set(name, func.clone())?;
+        let mirror = self.namespace(MIRROR)?;
+        ensure_table(self.lua, &mirror, ns)?.raw_set(name, func)
+    }
+
+    /// `RegisterIntegerEnum`: `_G[parent][sub] = { key = value, ... }`, a fresh table.
+    pub fn int_enum(&self, parent: &str, sub: &str, entries: &[(&str, i64)]) -> mlua::Result<()> {
+        let t = self.lua.create_table()?;
+        for (k, v) in entries {
+            t.set(*k, *v)?;
+        }
+        self.namespace(parent)?.set(sub, t)
+    }
+
+    /// `SetGlobalNumber`, a raw write.
+    pub fn number(&self, name: &str, value: impl IntoLua) -> mlua::Result<()> {
+        self.g.raw_set(name, value)
+    }
+}
+
+/// `parent[name]`, made an empty table when it is not one (`EnsureSubTable`).
+fn ensure_table(lua: &Lua, parent: &Table, name: &str) -> mlua::Result<Table> {
+    if let Value::Table(t) = parent.raw_get::<Value>(name)? {
+        return Ok(t);
+    }
+    let t = lua.create_table()?;
+    parent.raw_set(name, t.clone())?;
+    Ok(t)
+}
+
+/// Install every module's natives, then run the bootstraps; a failure is reported to the script
+/// error handler and leaves the stock interface as it was.
+pub fn install(ca: &Ca, script: &mut UiScript) {
+    let bootstraps = {
+        let lua = script.lua();
+        let result = (|| -> mlua::Result<Table> {
+            let api = Api::new(lua, ca)?;
+            core::install(&api)?;
+            spell::install(&api)?;
+            Ok(api.private)
+        })();
+        match result {
+            Ok(private) => private,
+            Err(e) => {
+                script.report_script_error(&format!("ClassicAPI: {e}"));
+                return;
+            }
+        }
+    };
+    for (name, src) in core::BOOTSTRAPS {
+        if let Err(e) = run_bootstrap(script, name, src, &bootstraps) {
+            script.report_script_error(&format!("ClassicAPI: {e}"));
+        }
+    }
+}
+
+/// Run one bootstrap as `function(CA) <src> end`, on the line it starts on so errors keep their
+/// line numbers.
+fn run_bootstrap(script: &UiScript, name: &str, src: &str, private: &Table) -> mlua::Result<()> {
+    let lua = script.lua();
+    let wrapped = format!("return function(CA) {src}\nend");
+    let f: mlua::Function = lua
+        .load(wrapped.as_bytes())
+        .set_name(format!("@Interface\\ClassicAPI\\{name}"))
+        .eval()?;
+    f.call::<()>(private.clone())
+}
+
+/// No values: what a native's `return 0` hands Lua.
+pub(crate) fn none() -> MultiValue {
+    MultiValue::new()
+}
+
+#[cfg(test)]
+pub(crate) mod test_support {
+    use super::*;
+
+    /// A bare VM with the API installed and no errors.
+    pub fn vm(ca: &Ca) -> UiScript {
+        let mut script = UiScript::new().expect("vm");
+        install(ca, &mut script);
+        assert_eq!(script.errors(), Vec::<String>::new());
+        script
+    }
+}

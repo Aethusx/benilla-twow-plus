@@ -1,0 +1,31 @@
+[package]
+name = "classicapi"
+version.workspace = true
+edition.workspace = true
+description = "ClassicAPI on top of benilla: the modern C_* API, Lua 5.1 compatibility and the bundled !!!ClassicAPI addon, through benilla's extension seams"
+
+[lints]
+workspace = true
+
+[features]
+default = ["dev"]
+# The instruments; the player build is `--no-default-features`.
+dev = ["benilla-app/dev"]
+
+[dependencies]
+# `default-features = false`, or `--no-default-features` still builds benilla-app with `dev`.
+benilla-app = { path = "../benilla-app", default-features = false }
+benilla-formats = { path = "../benilla-formats", default-features = false }
+benilla-protocol = { path = "../benilla-protocol" }
+benilla-ui = { path = "../benilla-ui" }
+benilla-world = { path = "../benilla-world", default-features = false }
+bevy.workspace = true
+mlua = { version = "0.11", features = ["lua51", "vendored"] }
+
+[build-dependencies]
+benilla-buildstamp = { path = "../benilla-buildstamp" }
+
+[[bin]]
+name = "benilla-classicapi"
+path = "src/main.rs"
+test = false

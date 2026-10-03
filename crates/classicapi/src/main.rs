@@ -1,4 +1,4 @@
-//! `benilla-mods`: the benilla client with nampower, UnitXP SP3, SuperWoW and ClassicAPI on top, started through
+//! `benilla-classicapi`: the benilla client with ClassicAPI on top, started through
 //! [`benilla_app::run_with`], so its build line reads `extended`.
 
 use benilla_app::BuildId;
@@ -15,11 +15,6 @@ fn main() -> benilla_app::AppExit {
         ..Default::default()
     };
     benilla_app::run_with(build, |app| {
-        app.add_plugins((
-            nampower::NampowerPlugin,
-            unitxp::UnitXpPlugin,
-            superwow::SuperWowPlugin,
-            classicapi::ClassicApiPlugin,
-        ));
+        app.add_plugins(classicapi::ClassicApiPlugin);
     })
 }

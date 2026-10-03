@@ -3,7 +3,7 @@ name = "benilla-mods"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "The launcher with every crate on top of benilla loaded: nampower, UnitXP SP3 and SuperWoW"
+description = "The launcher with every crate on top of benilla loaded: nampower, UnitXP SP3, SuperWoW and ClassicAPI"
 
 [lints]
 workspace = true
@@ -11,10 +11,11 @@ workspace = true
 [features]
 default = ["dev"]
 # The instruments; the player build is `--no-default-features`.
-dev = ["benilla-app/dev", "nampower/dev", "superwow/dev", "unitxp/dev"]
+dev = ["benilla-app/dev", "classicapi/dev", "nampower/dev", "superwow/dev", "unitxp/dev"]
 
 [dependencies]
 benilla-app = { path = "../benilla-app", default-features = false }
+classicapi = { path = "../classicapi", default-features = false }
 nampower = { path = "../nampower", default-features = false }
 superwow = { path = "../superwow", default-features = false }
 unitxp = { path = "../unitxp", default-features = false }
