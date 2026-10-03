@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # Sync this fork with upstream benilla: fetch, merge upstream's main into the current branch, then
-# build and test the crates on top (nampower, unitxp, the benilla-mods launcher) and the benilla
+# build and test the crates on top (nampower, unitxp, superwow, the benilla-mods launcher) and the benilla
 # crates their hooks live in.
 #
-# Merge conflicts can only land in the hook call sites crates/nampower/README.md and
-# crates/unitxp/README.md list; the script stops at a conflict and names the files.
+# Merge conflicts can only land in the hook call sites crates/nampower/README.md,
+# crates/unitxp/README.md and crates/superwow/README.md list; the script stops at a conflict and names the files.
 #
 #   scripts/nampower-sync.sh              # remote `upstream`, branch `main`
 #   UPSTREAM=origin BRANCH=main scripts/nampower-sync.sh
@@ -35,7 +35,7 @@ if ! git merge --no-edit "$remote/$branch"; then
 fi
 
 cargo build -p benilla-mods
-cargo test -p nampower -p unitxp
-cargo clippy -p nampower -p unitxp -p benilla-mods --all-targets -- -D warnings
-cargo clippy -p benilla-app -p benilla-world -- -D warnings
+cargo test -p nampower -p unitxp -p superwow
+cargo clippy -p nampower -p unitxp -p superwow -p benilla-mods --all-targets -- -D warnings
+cargo clippy -p benilla-app -p benilla-world -p benilla-ui -- -D warnings
 echo "nampower-sync: merged $remote/$branch; the crates on top build and their tests pass"

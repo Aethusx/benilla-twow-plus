@@ -1,0 +1,32 @@
+[package]
+name = "superwow"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "SuperWoW on top of benilla: guid, mark and owner unit tokens, the extended Lua API, UNIT_CASTEVENT and the SuperWoW CVars, through benilla's extension seams"
+
+[lints]
+workspace = true
+
+[features]
+default = ["dev"]
+# The instruments; the player build is `--no-default-features`.
+dev = ["benilla-app/dev"]
+
+[dependencies]
+# `default-features = false`, or `--no-default-features` still builds benilla-app with `dev`.
+benilla-app = { path = "../benilla-app", default-features = false }
+benilla-formats = { path = "../benilla-formats", default-features = false }
+benilla-protocol = { path = "../benilla-protocol" }
+benilla-ui = { path = "../benilla-ui" }
+benilla-world = { path = "../benilla-world", default-features = false }
+bevy.workspace = true
+mlua = { version = "0.11", features = ["lua51", "vendored"] }
+
+[build-dependencies]
+benilla-buildstamp = { path = "../benilla-buildstamp" }
+
+[[bin]]
+name = "benilla-superwow"
+path = "src/main.rs"
+test = false

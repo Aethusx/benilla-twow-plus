@@ -1,4 +1,4 @@
-//! `benilla-mods`: the benilla client with nampower, UnitXP SP3 and SuperWoW on top, started through
+//! `benilla-superwow`: the benilla client with SuperWoW on top, started through
 //! [`benilla_app::run_with`], so its build line reads `extended`.
 
 use benilla_app::BuildId;
@@ -15,10 +15,6 @@ fn main() -> benilla_app::AppExit {
         ..Default::default()
     };
     benilla_app::run_with(build, |app| {
-        app.add_plugins((
-            nampower::NampowerPlugin,
-            unitxp::UnitXpPlugin,
-            superwow::SuperWowPlugin,
-        ));
+        app.add_plugins(superwow::SuperWowPlugin);
     })
 }

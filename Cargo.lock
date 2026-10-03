@@ -615,6 +615,7 @@ dependencies = [
  "benilla-app",
  "benilla-buildstamp",
  "nampower",
+ "superwow",
  "unitxp",
 ]
 
@@ -6181,6 +6182,20 @@ dependencies = [
  "quote",
  "rustversion",
  "syn",
+]
+
+[[package]]
+name = "superwow"
+version = "0.2.0"
+dependencies = [
+ "benilla-app",
+ "benilla-buildstamp",
+ "benilla-formats",
+ "benilla-protocol",
+ "benilla-ui",
+ "benilla-world",
+ "bevy",
+ "mlua",
 ]
 
 [[package]]
