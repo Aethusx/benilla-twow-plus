@@ -19,6 +19,7 @@ use benilla_app::ext::{
 use bevy::prelude::*;
 
 pub mod aura;
+pub mod cast;
 pub mod cooldown;
 pub mod dbc;
 pub mod guid;
@@ -68,6 +69,8 @@ pub struct State {
     mouseover_unit: bool,
     /// Every aura's caster and expiry (`Aura::Source`).
     pub auras: aura::Source,
+    /// The player's and every observed unit's cast (`Spell::Cast`, `Spell::CastEvents`).
+    pub cast: cast::Tracker,
     /// `C_NewItems`' baseline and flags.
     pub(crate) new_items: lua::item::NewItems,
     /// `C_LossOfControl`'s school lockouts and last frame's effect keys.
@@ -144,14 +147,27 @@ impl Ca {
         self.state.lock().unwrap_or_else(|e| e.into_inner())
     }
 
+    /// The cast tracker with the same environment the aura cache reads.
+    pub fn with_cast<R>(&self, f: impl FnOnce(&mut cast::Tracker, &aura::Env) -> R) -> R {
+        self.with_auras_and(|_, cast, env| f(cast, env))
+    }
+
     /// The aura cache and what it reads, under the lock.
     pub fn with_auras<R>(&self, f: impl FnOnce(&mut aura::Source, &aura::Env) -> R) -> R {
+        self.with_auras_and(|auras, _, env| f(auras, env))
+    }
+
+    fn with_auras_and<R>(
+        &self,
+        f: impl FnOnce(&mut aura::Source, &mut cast::Tracker, &aura::Env) -> R,
+    ) -> R {
         let spells = spells::table(&self.db);
         let durations = self.db.get("SpellDuration");
         let mut st = self.lock();
         let family = spellmod::player_family(&self.db, &st.mirror);
         let State {
             auras,
+            cast,
             mirror,
             mods,
             known,
@@ -165,7 +181,7 @@ impl Ca {
             family,
             known,
         };
-        f(auras, &env)
+        f(auras, cast, &env)
     }
 }
 
@@ -231,8 +247,9 @@ fn frame(
             Ok(mlua::Value::String(_))
         )
     });
+    let notes: Vec<ExtCastNote> = notes.read().copied().collect();
     let sent: Vec<u32> = notes
-        .read()
+        .iter()
         .filter(|n| matches!(n.outcome, CastOutcome::Sent))
         .map(|n| n.spell_id)
         .collect();
@@ -266,6 +283,19 @@ fn frame(
         auras.take_signals()
     });
     lap.mark("auras");
+    let cast_fires = ca.with_cast(|cast, env| {
+        let now = cast::now_ms();
+        for n in &notes {
+            match n.outcome {
+                CastOutcome::Sent => cast.on_sent(env, n.spell_id, n.target, n.cast_time_ms, now),
+                CastOutcome::Refused(reason) => cast.on_failed(n.spell_id, reason, now),
+                CastOutcome::Pending => {}
+            }
+        }
+        cast.tick(env, now);
+        cast.take_fires()
+    });
+    lap.mark("cast");
     let (events, cancel, focus_lost) = {
         let mut st = ca.lock();
         st.mirror.map_id = map.as_deref().map_or(0, |m| m.0);
@@ -371,7 +401,57 @@ fn frame(
             script.queue_event("UNIT_AURA", vec![ScriptValue::Str(token)]);
         }
     }
+    for (name, args) in cast_events(&ca, script.lua(), cast_fires) {
+        script.queue_event(name, args);
+    }
     lap.mark("items+signals");
+}
+
+/// The tracker's `UNIT_SPELLCAST_*` events, each `(unit, castGUID, spellID, spellName, rank)`
+/// (SENT puts the target's token second) and a remote unit's once per token naming it. A reticle
+/// event's castGUID is nil, as retail's; the DLL sends "" only because its dispatcher cannot
+/// put a nil mid-list.
+fn cast_events(
+    ca: &Ca,
+    lua: &mlua::Lua,
+    fires: Vec<cast::Fire>,
+) -> Vec<(&'static str, Vec<ScriptValue>)> {
+    let mut out = Vec::new();
+    let Some(spells) = spells::table(&ca.db).filter(|_| !fires.is_empty()) else {
+        return out;
+    };
+    for f in fires {
+        if !benilla_ui::script::ext_read::has_listeners(lua, f.event) {
+            continue;
+        }
+        let Some(rec) = spells.row(f.spell) else {
+            continue;
+        };
+        let (name, rank) = cast::name_rank(&rec);
+        let tokens = match f.who {
+            cast::Who::Player => vec!["player".to_string()],
+            cast::Who::Unit(guid) => lua::unit::identity::tokens_for_guid(lua, ca, guid),
+        };
+        let target = f
+            .sent_target
+            .map(|g| lua::unit::identity::token_from_guid(lua, ca, g).unwrap_or_default());
+        for token in tokens {
+            let mut args = vec![ScriptValue::Str(token)];
+            if let Some(t) = &target {
+                args.push(ScriptValue::Str(t.clone()));
+            }
+            args.push(
+                f.cast_guid
+                    .clone()
+                    .map_or(ScriptValue::Nil, ScriptValue::Str),
+            );
+            args.push(ScriptValue::Number(f64::from(f.spell)));
+            args.push(ScriptValue::Str(name.clone()));
+            args.push(ScriptValue::Str(rank.clone()));
+            out.push((f.event, args));
+        }
+    }
+    out
 }
 
 /// The token table's per-frame half: the marks off the raid-target table, and the focus dropped

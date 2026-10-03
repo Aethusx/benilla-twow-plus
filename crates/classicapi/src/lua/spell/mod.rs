@@ -6,6 +6,7 @@ use mlua::{Lua, Value};
 use super::{as_string, atoi, is_number, to_int, Api};
 
 mod book;
+mod cast;
 pub(crate) mod data;
 mod info;
 mod state;
@@ -15,6 +16,7 @@ pub(super) fn install(api: &Api) -> mlua::Result<()> {
     data::install(api)?;
     book::install(api)?;
     state::install(api)?;
+    cast::install(api)?;
     Ok(())
 }
 

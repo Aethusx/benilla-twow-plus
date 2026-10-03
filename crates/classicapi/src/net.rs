@@ -21,7 +21,51 @@ pub fn register(app: &mut App) {
         .net_handler(K::ItemTemplate, on_item_template)
         .net_handler(K::TimeSpeed, on_clock)
         .net_handler(K::ServerUnixTime, on_clock)
-        .net_handler(K::SpellCooldowns, on_cooldowns);
+        .net_handler(K::SpellCooldowns, on_cooldowns)
+        .net_handler(K::SpellStart, on_cast)
+        .net_handler(K::SpellDelayed, on_cast)
+        .net_handler(K::ChannelStart, on_cast)
+        .net_handler(K::SpellFailedOther, on_cast)
+        .net_handler(K::CastResult, on_cast);
+}
+
+/// The cast tracker's packets (`Spell::Cast`'s dispatch subscriber, `SpellFailed_h` for a
+/// refusal); `SMSG_SPELL_GO` and `MSG_CHANNEL_UPDATE` reach it through their own handlers.
+fn on_cast(In(ev): In<SessionEvent>, ca: Res<Ca>) {
+    let now = crate::cast::now_ms();
+    ca.with_cast(|cast, env| match ev {
+        SessionEvent::SpellStart {
+            caster,
+            spell_id,
+            cast_time_ms,
+            target,
+            ..
+        } => cast.on_spell_start(
+            env,
+            caster,
+            spell_id,
+            cast_time_ms,
+            target.unwrap_or(0),
+            now,
+        ),
+        SessionEvent::SpellDelayed { caster, delay_ms } => {
+            cast.on_delayed(env.mirror.player, caster, delay_ms)
+        }
+        SessionEvent::ChannelStart {
+            spell_id,
+            duration_ms,
+        } => cast.on_channel_start(spell_id, duration_ms, now),
+        SessionEvent::SpellFailedOther { caster, spell_id } => {
+            cast.on_aborted(env, caster, spell_id)
+        }
+        SessionEvent::CastResult {
+            spell_id,
+            success: false,
+            reason,
+            ..
+        } => cast.on_failed(spell_id, reason.unwrap_or(0), now),
+        _ => {}
+    });
 }
 
 /// `SMSG_SPELL_COOLDOWN`: a school lockout, for `C_LossOfControl`.
@@ -67,6 +111,8 @@ fn on_spell_go(In(ev): In<SessionEvent>, ca: Res<Ca>) {
         return;
     };
     ca.with_auras(|auras, env| auras.on_spell_go(env, caster, spell_id, &hits));
+    let now = crate::cast::now_ms();
+    ca.with_cast(|cast, env| cast.on_spell_go(env, caster, spell_id, now));
 }
 
 /// `Aura::JudgementRefresh`: a white swing that dealt damage refreshes the attacker's judgements
@@ -93,6 +139,8 @@ fn on_channel_update(In(ev): In<SessionEvent>, ca: Res<Ca>) {
             .map_or(0, |f| f.u32(crate::mirror::field::UNIT_CHANNEL_SPELL));
         auras.restamp_player_channel(env.mirror.player, spell, remaining_ms);
     });
+    let now = crate::cast::now_ms();
+    ca.with_cast(|cast, _| cast.on_channel_update(remaining_ms, now));
 }
 
 /// The mirror-timer side cache the engine never keeps (`FUN_005E7990`'s three packets).

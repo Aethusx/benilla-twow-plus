@@ -380,6 +380,7 @@ pub struct ExtView<'w, 's> {
         ),
     >,
     auto_repeat: Res<'w, crate::spell::AutoRepeatActive>,
+    targeting: Res<'w, crate::spell::targeting::SpellTargeting>,
 }
 
 impl ExtView<'_, '_> {
@@ -425,6 +426,16 @@ impl ExtView<'_, '_> {
     /// Our cast in flight between send and resolution, if one is.
     pub fn cast_in_flight(&self, now: Instant) -> Option<u32> {
         self.pending.current(now)
+    }
+
+    /// Our last committed, unresolved cast of any class, ranged shots included (`0xceca88`).
+    pub fn cast_committed(&self, now: Instant) -> Option<u32> {
+        self.pending.committed(now)
+    }
+
+    /// The spell whose targeting cursor is up (`GetTargetingSpellId 0x6e48e0`), if one is.
+    pub fn targeting_spell(&self) -> Option<u32> {
+        self.targeting.spell()
     }
 
     /// The unit wearing raid mark `index` (1-8, star to skull).

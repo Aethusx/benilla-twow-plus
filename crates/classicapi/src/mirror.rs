@@ -278,6 +278,10 @@ pub struct Mirror {
     pub auto_repeat: u32,
     pub channel: u32,
     pub cast_in_flight: u32,
+    /// benilla's committed cast of any class, the engine's current-cast global.
+    pub cast_committed: u32,
+    /// The spell whose targeting cursor is up.
+    pub targeting: u32,
     pub in_group: bool,
     /// The party and raid rosters' guids, which outlive their units' objects.
     pub group: Vec<u64>,
@@ -384,6 +388,8 @@ impl Mirror {
         self.auto_repeat = view.auto_repeat().unwrap_or(0);
         self.channel = view.channel(now).unwrap_or(0);
         self.cast_in_flight = view.cast_in_flight(now).unwrap_or(0);
+        self.cast_committed = view.cast_committed(now).unwrap_or(0);
+        self.targeting = view.targeting_spell().unwrap_or(0);
         let epoch = view.cooldown_epoch();
         if epoch != self.cooldown_epoch || self.cooldowns.is_empty() {
             self.cooldowns = view.cooldown_records();
