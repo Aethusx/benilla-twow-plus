@@ -387,6 +387,7 @@ fn build_book(
             texture,
             offset,
             num_spells,
+            skill_line: line_id,
         });
     }
     (SpellBookState { tabs, slots }, tab_lines)

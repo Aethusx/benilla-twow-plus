@@ -116,12 +116,14 @@ fn seat_a_hunter(root: &Path) -> UiScript {
                     texture: Some("Interface\\Icons\\INV_Misc_QuestionMark".into()),
                     offset: 0,
                     num_spells: 2,
+                    skill_line: 0,
                 },
                 SpellTabView {
                     name: "Marksmanship".into(),
                     texture: Some("Interface\\Icons\\Ability_Marksmanship".into()),
                     offset: 2,
                     num_spells: 2,
+                    skill_line: 0,
                 },
             ],
             slots: vec![

@@ -8,6 +8,9 @@
 //!   the in-flight guard; [`CastOutcome`] reports what the ladder then did.
 //! - [`ExtCast`]: send a cast through the ladder, as a press would, at a chosen unit.
 //! - [`ExtView`]: read the selection, unit tokens, spell and item records, cooldowns and objects.
+//! - [`ExtRange`]: each unit's range inputs, as `GetMinMaxRange` reads them.
+//! - [`ExtUsable`]: the usability walk `IsUsableAction` runs, for any spell.
+//! - [`ExtUnitTokens`]: a crate's own unit tokens, whose units fire the stock `UNIT_*` events.
 //! - `UiScript::set_unit_token_extension` and `set_extra_unit_guids` (benilla-ui): a wider unit
 //!   token grammar, whose units' snapshots and aura lists the feeds here push.
 
@@ -160,6 +163,12 @@ pub struct CombatTextHook {
     pub hide_exp: bool,
 }
 
+/// A crate's own unit tokens and the units they name this frame, `(token, guid)`: each unit's
+/// snapshot is diffed and fires the stock per-field `UNIT_*` events with that token as `arg1`, as
+/// a stock token's does. Write it only when it changes; empty, nothing extra fires.
+#[derive(Resource, Default, PartialEq)]
+pub struct ExtUnitTokens(pub Vec<(String, u64)>);
+
 /// What a crate on top changes in the nameplates; the default changes nothing.
 #[derive(Resource, Default)]
 pub struct NameplateHook {
@@ -201,6 +210,17 @@ pub struct CooldownRecord {
     pub gcd: (Instant, std::time::Duration),
     /// Parked until `SMSG_COOLDOWN_EVENT`.
     pub on_hold: bool,
+}
+
+/// One press as the cast ladder resolved it, for observers that hold no gate: the spell, the
+/// unit it was aimed at, and whether the packet went out, the ladder refused it, or it waits.
+#[derive(Message, Clone, Copy, Debug)]
+pub struct ExtCastNote {
+    pub spell_id: u32,
+    pub target: Option<u64>,
+    pub outcome: CastOutcome,
+    /// The cast time the client predicts (`GetCastTime 0x6e3340` with talents and level), ms.
+    pub cast_time_ms: u32,
 }
 
 /// The set an [`ExtCast`] writer runs in, ahead of the apply.
@@ -298,8 +318,10 @@ impl Plugin for ExtPlugin {
             .add_message::<ExtCancelAura>()
             .add_message::<ExtSelect>()
             .add_message::<ExtCombatText>()
+            .add_message::<ExtCastNote>()
             .init_resource::<CombatTextHook>()
             .init_resource::<NameplateHook>()
+            .init_resource::<ExtUnitTokens>()
             .configure_sets(
                 Update,
                 ExtCastSet
@@ -534,5 +556,89 @@ impl ExtWorld<'_, '_> {
             let (_, rotation, translation) = t.to_scale_rotation_translation();
             (g.0, translation, rotation)
         })
+    }
+}
+
+/// Each unit's range inputs as `GetMinMaxRange` (`0x6e3480`) reads them: its combat reach, player
+/// bit and motion, the caster's and its auto-attack target's.
+#[derive(SystemParam)]
+pub struct ExtRange<'w, 's> {
+    units: crate::spell::RangeUnits<'w, 's>,
+    index: Res<'w, crate::net::GuidIndex>,
+}
+
+impl ExtRange<'_, '_> {
+    /// A streamed unit's inputs; `None` for no unit or one not streamed.
+    pub fn unit(&self, guid: u64) -> Option<benilla_formats::RangeUnit> {
+        self.units.unit(*self.index.0.get(&guid)?)
+    }
+
+    /// Our own player, standing at the default reach until its descriptor streams.
+    pub fn caster(&self) -> benilla_formats::RangeUnit {
+        self.units.caster()
+    }
+
+    /// Our auto-attack target's inputs, which the melee arm falls back to.
+    pub fn caster_attack_target(&self) -> Option<benilla_formats::RangeUnit> {
+        self.units.caster_attack_target()
+    }
+}
+
+/// The usability walk (`0x6e3d60`) the action bar runs per slot, for any spell: the reference's
+/// `FUN_SPELL_IS_USABLE`, without the cooldown, which greys apart.
+#[derive(SystemParam)]
+pub struct ExtUsable<'w, 's> {
+    spells: Option<Res<'w, crate::ui_action::Spells>>,
+    me: Query<'w, 's, &'static ObjectStore, With<crate::net::SelfPlayer>>,
+    stores: Query<'w, 's, &'static ObjectStore>,
+    index: Res<'w, crate::net::GuidIndex>,
+    selection: Res<'w, crate::target::Selection>,
+    objects: crate::net::Objects<'w, 's>,
+    factions: Option<Res<'w, crate::target::Factions>>,
+    reputations: Res<'w, crate::net::Reputations>,
+    cooldowns: Res<'w, crate::spell::Cooldowns>,
+    spell_mods: Res<'w, crate::spell::SpellModifiers>,
+    items: Res<'w, crate::items::Items>,
+    commands: Res<'w, crate::net::NetCommands>,
+}
+
+impl ExtUsable<'_, '_> {
+    /// `(usable, notEnoughMana)` for each of `spell_ids` known to `Spell.dbc`, as the bar's
+    /// `IsUsableAction` would answer for a slot holding it; empty out of the world.
+    pub fn verdicts(&self, spell_ids: impl IntoIterator<Item = u32>) -> Vec<(u32, bool, bool)> {
+        let (Some(spells), Ok(store)) = (self.spells.as_deref(), self.me.single()) else {
+            return Vec::new();
+        };
+        let target = self
+            .selection
+            .guid
+            .and_then(|g| self.index.0.get(&g))
+            .and_then(|&e| self.stores.get(e).ok());
+        let carried = crate::ui_items::carried_counts(&store.0, &self.objects);
+        let ctx = crate::spell::usable::UsableCtx {
+            store,
+            target_store: target,
+            factions: self.factions.as_deref(),
+            reputations: &self.reputations,
+            cooldowns: &self.cooldowns,
+            spell_mods: &self.spell_mods,
+            carried: &carried,
+        };
+        spell_ids
+            .into_iter()
+            .filter_map(|id| {
+                let d = spells.catalog.get(id)?;
+                let (usable, oom) = crate::spell::usable::spell_usable(
+                    id,
+                    d,
+                    spells,
+                    &ctx,
+                    &self.objects,
+                    &self.items,
+                    &self.commands,
+                );
+                Some((id, usable, oom))
+            })
+            .collect()
     }
 }

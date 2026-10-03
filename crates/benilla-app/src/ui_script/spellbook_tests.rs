@@ -13,12 +13,14 @@ fn book() -> SpellBookState {
                 texture: Some("Interface\\Icons\\Spell_Fire_FlameBolt".into()),
                 offset: 0,
                 num_spells: 2,
+                skill_line: 0,
             },
             SpellTabView {
                 name: "Frost".into(),
                 texture: Some("Interface\\Icons\\Spell_Frost_FrostBolt02".into()),
                 offset: 2,
                 num_spells: 1,
+                skill_line: 0,
             },
         ],
         slots: vec![

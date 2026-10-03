@@ -31,6 +31,8 @@ pub struct SpellTabView {
     pub texture: Option<String>,
     pub offset: u32,
     pub num_spells: u32,
+    /// The tab's `SkillLine.dbc` id, the engine's tab entry `+0x00`; 0 for the General tab.
+    pub skill_line: u32,
 }
 
 /// One spell in the flat book, every field resolved by the app.
@@ -677,12 +679,14 @@ mod tests {
                     texture: Some("Interface\\Icons\\Spell_Fire_FlameBolt".into()),
                     offset: 0,
                     num_spells: 2,
+                    skill_line: 0,
                 },
                 SpellTabView {
                     name: "Frost".into(),
                     texture: Some("Interface\\Icons\\Spell_Frost_FrostBolt02".into()),
                     offset: 2,
                     num_spells: 1,
+                    skill_line: 0,
                 },
             ],
             slots: vec![

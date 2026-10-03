@@ -240,7 +240,7 @@ fn frame(
         casts.write(cast);
     }
     if let Some(s) = script.as_deref_mut() {
-        s.set_extra_unit_guids(extra);
+        s.set_extra_unit_guids_for("superwow", extra);
         for (name, args) in events {
             s.queue_event(name, args);
         }

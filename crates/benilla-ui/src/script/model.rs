@@ -248,10 +248,12 @@ pub(crate) struct Model {
     pub(crate) unit_guids: super::UnitGuids,
     /// A crate on top's wider token grammar ([`super::UnitTokenExtension`]); `None`, the stock
     /// grammar alone.
-    pub(crate) unit_token_ext: Option<super::UnitTokenExtension>,
+    pub(crate) unit_token_ext: Vec<super::UnitTokenExtension>,
     /// Guids a crate on top asks snapshots and aura lists for beyond the ones a stock token can
     /// reach, so its tokens read them ([`super::UiScript::set_extra_unit_guids`]).
     pub(crate) extra_unit_guids: Vec<u64>,
+    /// The same guids per crate, by the key each pushes under; `extra_unit_guids` is their union.
+    pub(crate) extra_unit_guids_by: std::collections::BTreeMap<&'static str, Vec<u64>>,
     /// Spell ids the cancel verbs queued (`CancelPlayerBuff`, `CancelTrackingBuff`, …), one
     /// `CMSG_CANCEL_AURA` each.
     pub(crate) cancel_aura_requests: Vec<u32>,
@@ -1023,7 +1025,9 @@ impl Model {
     /// What an installed [`super::UnitTokenExtension`] makes of `token`: `None` without one, or
     /// for a token outside its grammar.
     pub(crate) fn extended_guid(&self, token: &str) -> Option<Option<u64>> {
-        (self.unit_token_ext.as_ref()?)(&self.unit_guids, token)
+        self.unit_token_ext
+            .iter()
+            .find_map(|ext| ext(&self.unit_guids, token))
     }
 
     /// The resolver (`0x515970`) with the raise as the Lua error it is, then, where the stock
@@ -1142,8 +1146,9 @@ impl Model {
             player_auras: Vec::new(),
             unit_auras: HashMap::new(),
             unit_guids: Default::default(),
-            unit_token_ext: None,
+            unit_token_ext: Vec::new(),
             extra_unit_guids: Vec::new(),
+            extra_unit_guids_by: Default::default(),
             cancel_aura_requests: Vec::new(),
             tracking: None,
             script_calls: Vec::new(),

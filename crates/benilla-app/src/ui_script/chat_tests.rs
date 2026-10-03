@@ -300,6 +300,7 @@ fn chat_click_dismisses_a_stuck_spell_but_not_an_item() {
             texture: Some("Interface\\Icons\\Spell_Fire_FlameBolt".into()),
             offset: 0,
             num_spells: 1,
+            skill_line: 0,
         }],
         slots: vec![SpellSlotView {
             spell_id: 133,

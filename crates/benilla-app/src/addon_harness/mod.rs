@@ -1220,12 +1220,14 @@ fn seat_a_session(script: &mut UiScript) {
                 texture: Some("Interface\\Icons\\INV_Misc_QuestionMark".into()),
                 offset: 0,
                 num_spells: 2,
+                skill_line: 0,
             },
             benilla_ui::script::SpellTabView {
                 name: "Arms".into(),
                 texture: Some("Interface\\Icons\\Ability_Rogue_Eviscerate".into()),
                 offset: 2,
                 num_spells: 2,
+                skill_line: 0,
             },
         ],
         slots: vec![

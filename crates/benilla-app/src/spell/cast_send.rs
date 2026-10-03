@@ -105,6 +105,8 @@ pub(crate) struct CastLadder<'w, 's> {
     pub(crate) held_for_pick: ResMut<'w, HeldForPick>,
     /// A crate's hook on every press ([`crate::ext::CastGate`]); absent in a bare harness.
     pub(crate) gate: Option<ResMut<'w, crate::ext::CastGateHook>>,
+    /// Each press's outcome for observers ([`crate::ext::ExtCastNote`]); absent in a bare harness.
+    pub(crate) notes: Option<ResMut<'w, Messages<crate::ext::ExtCastNote>>>,
 }
 
 /// What a targeting-cursor click bound: what `BindLocation 0x6e60f0` or `BindTarget 0x6e5b40`
@@ -198,6 +200,85 @@ impl CastLadder<'_, '_> {
         if let Some(gate) = self.gate.as_mut().and_then(|g| g.0.as_mut()) {
             gate.targeted_sent(spell_id, now);
         }
+        let target = match bound {
+            TargetedBind::Unit(guid) => Some(guid),
+            _ => None,
+        };
+        let level = self
+            .objects
+            .player_fields()
+            .and_then(|f| f.unit_level())
+            .unwrap_or(0);
+        self.note(spell_id, target, crate::ext::CastOutcome::Sent, level);
+    }
+
+    /// Tell observers what became of one press, with the cast time the client predicts for it.
+    fn note(
+        &mut self,
+        spell_id: u32,
+        target: Option<u64>,
+        outcome: crate::ext::CastOutcome,
+        level: u32,
+    ) {
+        let cast_time_ms = match (
+            self.spells.as_deref(),
+            self.spells.as_deref().and_then(|s| s.catalog.get(spell_id)),
+        ) {
+            (Some(s), Some(d)) => s.cast_time_ms(d, level, &self.spell_mods),
+            _ => 0,
+        };
+        if let Some(notes) = self.notes.as_mut() {
+            notes.write(crate::ext::ExtCastNote {
+                spell_id,
+                target,
+                outcome,
+                cast_time_ms,
+            });
+        }
+    }
+
+    /// Run the ladder and read its outcome off the in-flight stamp and the refusal queue.
+    fn run_ladder(
+        &mut self,
+        spell_id: u32,
+        ctx: &cast_target::CastContext,
+        commit: CastCommit,
+        on_object: Option<u64>,
+        hold: Option<HeldCast>,
+    ) -> crate::ext::CastOutcome {
+        let armed = self.pending.stamp();
+        let refusals = self.cast_errors.0.len();
+        send_spell_cast(
+            spell_id,
+            ctx,
+            commit,
+            on_object,
+            hold,
+            &self.commands,
+            &self.self_player,
+            self.spells.as_deref(),
+            &self.objects,
+            &self.items,
+            &mut self.sheath,
+            &mut self.ecs,
+            &mut self.pending,
+            &mut self.queued_melee,
+            &mut self.cooldowns,
+            &self.spell_mods,
+            &mut self.cast_errors,
+            &mut self.auto_repeat,
+            &mut self.trade_skill_opens,
+            &mut self.ground,
+            &mut self.held_for_pick,
+        );
+        let outcome = ladder_outcome(&self.pending, armed, &self.cast_errors, refusals);
+        let level = ctx
+            .rel
+            .self_store
+            .and_then(|s| s.0.unit_level())
+            .unwrap_or(0);
+        self.note(spell_id, ctx.selection_guid, outcome, level);
+        outcome
     }
 
     /// TryCast's dead rung alone, for the Attack button, whose short-circuit (`0x6e4c7a`) leaves
@@ -370,13 +451,15 @@ impl CastLadder<'_, '_> {
             &mut self.ground,
             &mut self.held_for_pick,
         );
-        let outcome = if self.pending.stamp() != armed {
-            crate::ext::CastOutcome::Sent
-        } else if let Some(fail) = self.cast_errors.0.get(refusals..).and_then(|f| f.last()) {
-            crate::ext::CastOutcome::Refused(fail.reason)
-        } else {
-            crate::ext::CastOutcome::Pending
-        };
+        let outcome = ladder_outcome(&self.pending, armed, &self.cast_errors, refusals);
+        if let Some(notes) = self.notes.as_mut() {
+            notes.write(crate::ext::ExtCastNote {
+                spell_id,
+                target: ctx.selection_guid,
+                outcome,
+                cast_time_ms: attempt.cast_time_ms,
+            });
+        }
         if let Some(gate) = self.gate.as_mut().and_then(|g| g.0.as_mut()) {
             gate.outcome(&attempt, outcome);
         }
@@ -390,29 +473,23 @@ impl CastLadder<'_, '_> {
         on_object: Option<u64>,
         hold: Option<HeldCast>,
     ) {
-        send_spell_cast(
-            spell_id,
-            ctx,
-            commit,
-            on_object,
-            hold,
-            &self.commands,
-            &self.self_player,
-            self.spells.as_deref(),
-            &self.objects,
-            &self.items,
-            &mut self.sheath,
-            &mut self.ecs,
-            &mut self.pending,
-            &mut self.queued_melee,
-            &mut self.cooldowns,
-            &self.spell_mods,
-            &mut self.cast_errors,
-            &mut self.auto_repeat,
-            &mut self.trade_skill_opens,
-            &mut self.ground,
-            &mut self.held_for_pick,
-        );
+        self.run_ladder(spell_id, ctx, commit, on_object, hold);
+    }
+}
+
+/// What the ladder did, read off the in-flight stamp it armed and the refusals it queued.
+fn ladder_outcome(
+    pending: &crate::spell::PendingCast,
+    armed: Option<(u32, std::time::Instant)>,
+    cast_errors: &CastErrors,
+    refusals: usize,
+) -> crate::ext::CastOutcome {
+    if pending.stamp() != armed {
+        crate::ext::CastOutcome::Sent
+    } else if let Some(fail) = cast_errors.0.get(refusals..).and_then(|f| f.last()) {
+        crate::ext::CastOutcome::Refused(fail.reason)
+    } else {
+        crate::ext::CastOutcome::Pending
     }
 }
 

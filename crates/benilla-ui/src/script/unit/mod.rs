@@ -346,19 +346,36 @@ impl super::UiScript {
         ends
     }
 
-    /// Install a wider unit-token grammar ([`UnitTokenExtension`]); the stock grammar alone until
-    /// one is.
+    /// Add a wider unit-token grammar ([`UnitTokenExtension`]); the stock grammar alone until one
+    /// is. Several crates may each add one: they are asked in the order they were added, and the
+    /// first that recognises a token answers it.
     pub fn set_unit_token_extension(&mut self, ext: UnitTokenExtension) {
-        self.model_mut().unit_token_ext = Some(ext);
+        self.model_mut().unit_token_ext.push(ext);
     }
 
     /// The guids, beyond those a stock token reaches, whose snapshots ([`Self::chain_end_guids`])
     /// and aura lists the app feeds, for the tokens a [`UnitTokenExtension`] names.
     pub fn set_extra_unit_guids(&mut self, guids: Vec<u64>) {
+        self.set_extra_unit_guids_for("", guids);
+    }
+
+    /// [`Self::set_extra_unit_guids`] for one crate among several, under its own `key`: the app
+    /// feeds the union of every key's guids.
+    pub fn set_extra_unit_guids_for(&mut self, key: &'static str, guids: Vec<u64>) {
         let mut model = self.model_mut();
-        if model.extra_unit_guids != guids {
-            model.extra_unit_guids = guids;
+        if model.extra_unit_guids_by.get(key) == Some(&guids) {
+            return;
         }
+        model.extra_unit_guids_by.insert(key, guids);
+        let mut all: Vec<u64> = model
+            .extra_unit_guids_by
+            .values()
+            .flatten()
+            .copied()
+            .collect();
+        all.sort_unstable();
+        all.dedup();
+        model.extra_unit_guids = all;
     }
 
     /// What [`Self::set_extra_unit_guids`] last pushed.

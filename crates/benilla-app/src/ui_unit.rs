@@ -122,6 +122,8 @@ struct UnitFeedMemo {
     worn_hidden: Option<(bool, bool)>,
     /// `PLAYER_FIELD_BYTES` byte 2 (`GetActionBarToggles`, `0x4e7660`); no field watch, no event.
     action_bar_toggles: Option<u8>,
+    /// The extension tokens the last frame fed, so a dropped one clears.
+    ext_tokens: Vec<String>,
 }
 
 /// Adds the per-frame unit feed; the `Unit*` bindings live in `benilla-ui`.
@@ -1202,7 +1204,12 @@ fn feed_units(
     mut sink: crate::ui_action::MessageSink,
     // `ResMut` because the guild-identity cache is lazy: a miss sends `CMSG_GUILD_QUERY`.
     mut guild: ResMut<crate::ui_guild::GuildState>,
-    interact: Option<Res<crate::ui_session::InteractNpc>>,
+    // The interaction NPC, and a crate on top's own tokens, whose units fire the same `UNIT_*`
+    // events as a stock token's: one tuple for Bevy's 16-param ceiling.
+    (interact, ext_tokens): (
+        Option<Res<crate::ui_session::InteractNpc>>,
+        Option<Res<crate::ext::ExtUnitTokens>>,
+    ),
     // Rested billing minutes, sent only in `SMSG_AUTH_RESPONSE`; the reference keeps a global.
     entered_world: Option<MessageReader<crate::net::EnteredWorldMessage>>,
 ) {
@@ -1233,6 +1240,7 @@ fn feed_units(
     let factions_changed = factions.as_ref().is_some_and(|r| r.is_changed());
     // The interaction NPC moves when nothing else does, and `MERCHANT_SHOW` reads `"npc"`.
     let interact_changed = interact.as_ref().is_some_and(|r| r.is_changed());
+    let ext_changed = ext_tokens.as_ref().is_some_and(|r| r.is_changed());
     gate::trace(
         "feed_units",
         &[
@@ -1246,6 +1254,7 @@ fn feed_units(
             ("reputations", reps_changed),
             ("factions", factions_changed),
             ("interact", interact_changed),
+            ("ext_tokens", ext_changed),
         ],
     );
     let gate = gate::Gate::new(
@@ -1258,7 +1267,8 @@ fn feed_units(
             || group_changed
             || reps_changed
             || factions_changed
-            || interact_changed,
+            || interact_changed
+            || ext_changed,
     );
     stores.removed.clear();
     if gate.skip() {
@@ -1526,6 +1536,44 @@ fn feed_units(
                 }
             }
         }
+    }
+
+    // A crate's tokens: each named unit's snapshot diffed and fired like a stock token's; a token
+    // that names nobody clears silently, as `"target"` does.
+    if let Some(ext) = ext_tokens.as_deref() {
+        let mut live = std::collections::HashSet::new();
+        for (token, guid) in &ext.0 {
+            let cur = index
+                .as_ref()
+                .and_then(|i| i.0.get(guid))
+                .and_then(|&e| stores.all.get(e).ok())
+                .map(|store| held.state(store, *guid));
+            live.insert(token.as_str());
+            match cur {
+                Some(cur) => {
+                    let prev = memo.last.get(token.as_str());
+                    if prev != Some(&cur) {
+                        gate.audit("feed_units", "an extension-token transition");
+                        fire_transitions(&mut script, token, prev, &cur, &edges);
+                        memo.last.insert(token.clone(), cur);
+                    }
+                }
+                None => {
+                    memo.last.remove(token.as_str());
+                }
+            }
+        }
+        // A token the crate dropped clears too.
+        let dropped: Vec<String> = memo
+            .ext_tokens
+            .iter()
+            .filter(|t| !live.contains(t.as_str()))
+            .cloned()
+            .collect();
+        for t in dropped {
+            memo.last.remove(&t);
+        }
+        memo.ext_tokens = live.into_iter().map(str::to_string).collect();
     }
 
     // `PLAYER_TARGET_CHANGED`, argless, when the selection changes. A `/reload`'s fresh memo fires

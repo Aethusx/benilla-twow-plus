@@ -211,6 +211,7 @@ mod tests {
                 texture: None,
                 offset: 0,
                 num_spells: 1,
+                skill_line: 0,
             }],
             slots: vec![SpellSlotView {
                 spell_id: HEAL,
@@ -402,6 +403,7 @@ mod tests {
                     texture: None,
                     offset: 0,
                     num_spells: 1,
+                    skill_line: 0,
                 }],
                 slots: vec![SpellSlotView {
                     spell_id: FORTITUDE,

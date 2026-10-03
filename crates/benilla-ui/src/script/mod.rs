@@ -57,6 +57,7 @@ mod cvars;
 mod dressup;
 mod duel;
 pub(crate) mod event;
+pub mod ext_read;
 mod extract;
 mod follow;
 pub(crate) mod font;
