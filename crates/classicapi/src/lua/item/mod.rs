@@ -14,7 +14,7 @@ pub(crate) mod actions;
 pub(crate) mod data;
 pub(crate) mod inventory;
 mod newitems;
-mod stats;
+pub(crate) mod stats;
 
 pub(crate) use data::{icon_for_display, on_use_spell};
 pub(crate) use newitems::NewItems;

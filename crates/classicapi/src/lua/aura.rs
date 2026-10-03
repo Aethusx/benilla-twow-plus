@@ -1146,6 +1146,37 @@ fn plain_color(lua: &Lua, argb: u32) -> mlua::Result<Table> {
     Ok(t)
 }
 
+/// The player's harmful auras in the by-index getters' order, with each one's start and end
+/// on the cache's clock (`(0, 0)` unknown): what `LossOfControl::BuildList` walks.
+pub(crate) fn player_harmful(ca: &Ca) -> Vec<(u32, u64, u64)> {
+    let player = ca.lock().mirror.player;
+    if player == 0 {
+        return Vec::new();
+    }
+    read(ca, player, |r, f| {
+        let Some(f) = f else {
+            return Vec::new();
+        };
+        let mut out = Vec::new();
+        let m = Match::default();
+        for i in 0..AURA_TOTAL {
+            let slot = in_filter_order(Filter::Harmful, i);
+            if !r.slot_matches_filter(f, slot, Filter::Harmful, &m) {
+                continue;
+            }
+            let spell = aura::slot_spell(f, slot);
+            let (_, exp, dur) = r.src.get(player, spell, slot as i16).unwrap_or((0, 0, 0));
+            let start = if exp != 0 && dur != 0 {
+                exp.saturating_sub(u64::from(dur))
+            } else {
+                0
+            };
+            out.push((spell, start, exp));
+        }
+        out
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

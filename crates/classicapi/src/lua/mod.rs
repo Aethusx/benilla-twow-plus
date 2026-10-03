@@ -12,6 +12,7 @@ use mlua::{IntoLua, IntoLuaMulti, Lua, MultiValue, Table, Value};
 
 use crate::Ca;
 
+mod action;
 mod addons;
 mod args;
 mod aura;
@@ -21,6 +22,7 @@ mod core;
 pub(crate) mod equipmentset;
 mod frame;
 pub(crate) mod item;
+pub(crate) mod lossofcontrol;
 pub(crate) mod luasyntax;
 mod nameplate;
 pub(crate) mod spell;
@@ -151,6 +153,8 @@ pub fn install(ca: &Ca, script: &mut UiScript) {
             time::install(&api)?;
             addons::install(&api)?;
             frame::install(&api)?;
+            lossofcontrol::install(&api)?;
+            action::install(&api)?;
             unit::install(&api)?;
             Ok(api.private)
         })();

@@ -214,3 +214,65 @@ pub fn modern_script_args(lua: &Lua) -> bool {
     lua.app_data_ref::<Model>()
         .is_some_and(|m| m.modern_script_args)
 }
+
+/// An action-bar slot's kind byte (`0x00` spell, `0x40` macro, `0x80` item) and its spell,
+/// macro or item id, 1-based; `None` for an empty slot.
+pub fn action_slot(lua: &Lua, slot: u32) -> Option<(u8, u32)> {
+    lua.app_data_ref::<Model>()?
+        .actions
+        .get(&slot)
+        .map(|a| (a.kind, a.action))
+}
+
+/// What the cursor holds, as `GetCursorInfo` reports it.
+#[derive(Clone, Debug, PartialEq)]
+pub enum CursorView {
+    /// An item picked up from a bag or the paperdoll, its link when known.
+    Item {
+        item_id: u32,
+        link: Option<String>,
+    },
+    Money(u32),
+    /// A spell from a book: its 1-based slot, whether the pet's book, its id.
+    Spell {
+        book_slot: u32,
+        pet: bool,
+        spell_id: u32,
+    },
+    /// A macro by its 1-based index.
+    Macro(u32),
+    /// A vendor row, 1-based.
+    Merchant(u32),
+    /// An action dragged off the bar: its kind byte and id.
+    Action {
+        kind: u8,
+        action: u32,
+    },
+    /// Anything else (a pet action, a stabled pet).
+    Other,
+}
+
+/// The cursor's payload, `None` when it holds nothing.
+pub fn cursor(lua: &Lua) -> Option<CursorView> {
+    use super::cursor::CursorPayload as P;
+    let model = lua.app_data_ref::<Model>()?;
+    Some(match model.cursor.as_ref()? {
+        P::Item(i) => CursorView::Item {
+            item_id: i.item_id,
+            link: i.link.clone(),
+        },
+        P::Money(m) => CursorView::Money(m.copper),
+        P::Spell(s) => CursorView::Spell {
+            book_slot: s.book_slot,
+            pet: s.book_type.eq_ignore_ascii_case("pet"),
+            spell_id: s.spell_id,
+        },
+        P::Macro(m) => CursorView::Macro(m.index),
+        P::Merchant(m) => CursorView::Merchant(m.row + 1),
+        P::Action(a) => CursorView::Action {
+            kind: a.kind,
+            action: a.action,
+        },
+        P::PetAction(_) | P::StablePet(_) => CursorView::Other,
+    })
+}

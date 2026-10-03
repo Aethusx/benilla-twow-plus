@@ -20,7 +20,15 @@ pub fn register(app: &mut App) {
         .net_handler(K::ChannelUpdate, on_channel_update)
         .net_handler(K::ItemTemplate, on_item_template)
         .net_handler(K::TimeSpeed, on_clock)
-        .net_handler(K::ServerUnixTime, on_clock);
+        .net_handler(K::ServerUnixTime, on_clock)
+        .net_handler(K::SpellCooldowns, on_cooldowns);
+}
+
+/// `SMSG_SPELL_COOLDOWN`: a school lockout, for `C_LossOfControl`.
+fn on_cooldowns(In(ev): In<SessionEvent>, ca: Res<Ca>) {
+    if let SessionEvent::SpellCooldowns { caster, cooldowns } = ev {
+        crate::lua::lossofcontrol::on_cooldowns(&ca, caster, &cooldowns);
+    }
 }
 
 /// The clocks `C_DateAndTime` reads: the packed game date (`year·372 + month·31 + day`, both

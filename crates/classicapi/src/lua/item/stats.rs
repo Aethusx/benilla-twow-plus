@@ -85,6 +85,11 @@ impl Accum {
         }
     }
 
+    /// `Value`: one key's sum.
+    pub fn get(&self, key: &str) -> i64 {
+        KEYS.iter().position(|x| *x == key).map_or(0, |i| self.0[i])
+    }
+
     /// `AddSpellStatAuras`: the stat auras of one spell, `base + dice` each.
     pub fn spell_auras(&mut self, db: &Databases, spell: i32, sign: i64) {
         let Some(t) = spells::table(db) else {

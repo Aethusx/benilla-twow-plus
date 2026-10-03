@@ -69,6 +69,9 @@ pub struct State {
     pub auras: aura::Source,
     /// `C_NewItems`' baseline and flags.
     pub(crate) new_items: lua::item::NewItems,
+    /// `C_LossOfControl`'s school lockouts and last frame's effect keys.
+    pub(crate) school_locks: lua::lossofcontrol::Locks,
+    pub(crate) loc_prev: Vec<(u32, u32)>,
     /// The server and realm clocks `C_DateAndTime` reads.
     pub(crate) clocks: lua::time::Clocks,
     /// `C_EquipmentSet`'s sets, loaded per character.
@@ -340,6 +343,9 @@ fn frame(
         script.queue_event(name, args);
     }
     lua::time::tick(script.lua());
+    for (name, args) in lua::lossofcontrol::tick(&ca) {
+        script.queue_event(name, args);
+    }
     // The template loads: the asks benilla sends, and the events their answers fire.
     let (loaded, asks) = ca.items.lock().tick();
     for id in asks {
