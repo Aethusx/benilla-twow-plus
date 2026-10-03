@@ -138,6 +138,15 @@ pub(crate) struct NamePlates {
 }
 
 impl NamePlates {
+    /// Every plate bound to a unit, `(guid, frame)`, in pool order: the order plates were made.
+    pub(crate) fn live(&self) -> Vec<(u64, FrameHandle)> {
+        let mut out: Vec<(usize, u64)> = self.assigned.iter().map(|(&g, &i)| (i, g)).collect();
+        out.sort_unstable();
+        out.into_iter()
+            .map(|(i, g)| (g, self.plates[i].frame))
+            .collect()
+    }
+
     /// Whether the `0x7cba30` veto refuses `frame`: only a plate, only while the veto stands.
     pub(crate) fn vetoes(&self, frame: FrameHandle) -> bool {
         self.hit_test_vetoed && self.by_frame.contains_key(&frame)

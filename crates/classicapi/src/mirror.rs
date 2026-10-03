@@ -252,12 +252,26 @@ pub fn wow_facing(rotation: Quat) -> f32 {
 pub struct Mirror {
     pub player: u64,
     pub target: u64,
+    /// The loaded `Map.dbc` id (`VAR_CURRENT_MAP_ID`).
+    pub map_id: u32,
+    /// Whether the player stands in a WMO interior; `None` before the player exists.
+    pub indoors: Option<bool>,
+    /// Line of sight from the player to each unit within 150 yards, traced while a native wants it.
+    pub sight: HashMap<u64, bool>,
+    pub sight_wanted_until: Option<Instant>,
     pub objects: HashMap<u64, Fields>,
     pub places: HashMap<u64, Place>,
     pub speeds: HashMap<u64, benilla_protocol::MoveSpeeds>,
     /// Each streamed unit's `GetMinMaxRange` inputs: reach, player bit, motion.
     pub range_units: HashMap<u64, RangeUnit>,
     pub caster: Option<RangeUnit>,
+    /// Each streamed creature's queried template: `(CreatureType id, CreatureFamily id, rank)`.
+    pub creatures: HashMap<u64, (u32, u32, u32)>,
+    /// Each held unit's cached name.
+    pub names: HashMap<u64, String>,
+    /// The player-name cache, `guid -> (name, (race, class, gender))`, copied when it moves.
+    pub player_names: HashMap<u64, PlayerName>,
+    names_generation: Option<u64>,
     pub caster_attack_target: Option<RangeUnit>,
     pub move_flags: u32,
     pub attacking: bool,
@@ -265,6 +279,8 @@ pub struct Mirror {
     pub channel: u32,
     pub cast_in_flight: u32,
     pub in_group: bool,
+    /// The party and raid rosters' guids, which outlive their units' objects.
+    pub group: Vec<u64>,
     /// The client's raid-target table, slots 1-8 at 0-7.
     pub marks: [u64; 8],
     pub cooldowns: Vec<CooldownRecord>,
@@ -278,6 +294,9 @@ pub struct Mirror {
     pub clock: Option<(Instant, f64)>,
     pruned_at: Option<Instant>,
 }
+
+/// A cached player name and its `(race, class, gender)` when the query answered them.
+pub type PlayerName = (String, Option<(u8, u8, u8)>);
 
 /// One unit whose descriptor changed this frame, with its last copy, for the diff-driven events.
 pub struct Change {
@@ -300,6 +319,15 @@ impl Mirror {
             *mark = view.raid_mark(i as u8 + 1).unwrap_or(0);
         }
         self.in_group = view.in_group();
+        self.group.clear();
+        if self.in_group {
+            for i in 1..=4 {
+                self.group.extend(view.unit_guid(&format!("party{i}")));
+            }
+            for i in 1..=40 {
+                self.group.extend(view.unit_guid(&format!("raid{i}")));
+            }
+        }
         let mut changes = Vec::new();
         for (guid, fields) in view.changed_objects() {
             let old = self.objects.insert(guid, Fields::from_object(fields));
@@ -315,6 +343,8 @@ impl Mirror {
         self.places.clear();
         self.speeds.clear();
         self.range_units.clear();
+        self.creatures.clear();
+        self.names.clear();
         for (guid, pos, rot) in world.placements() {
             self.places.insert(
                 guid,
@@ -329,8 +359,23 @@ impl Mirror {
             if let Some(u) = range.unit(guid) {
                 self.range_units.insert(guid, u);
             }
+            if let Some(n) = world.unit_name(guid) {
+                self.names.insert(guid, n.to_string());
+            }
+            if let Some((kind, rank)) = world.creature(guid) {
+                let family = world.creature_family(guid).unwrap_or(0);
+                self.creatures.insert(guid, (kind, family, rank));
+            }
         }
         self.caster = Some(range.caster());
+        let generation = world.names_generation();
+        if self.names_generation != Some(generation) {
+            self.names_generation = Some(generation);
+            self.player_names = world
+                .player_names()
+                .map(|(g, n, t)| (g, (n.to_string(), t)))
+                .collect();
+        }
         self.caster_attack_target = range.caster_attack_target();
         self.move_flags = view.move_flags();
         self.attacking = view.attacking();
@@ -370,7 +415,66 @@ impl Mirror {
     }
 }
 
+/// `UnitInLineOfSight`'s trace bound: a longer segment reads as blocked.
+pub const SIGHT_MAX_YARDS: f32 = 150.0;
+/// A unit's eye height for sight lines, scaled by `OBJECT_FIELD_SCALE_X`, as UnitXP's port
+/// reads it. Deviation: the reference reads the model's collision box height, which benilla does
+/// not publish.
+const EYE_HEIGHT: f32 = 2.0;
+
+/// WoW's axes back to Bevy's, `(-y, z, -x)`.
+pub fn bevy_position(p: [f32; 3]) -> Vec3 {
+    Vec3::new(-p[1], p[2], -p[0])
+}
+
 impl Mirror {
+    /// A unit's eye height for the sight trace.
+    pub fn eye_height(&self, guid: u64) -> f32 {
+        let scale = self
+            .object(guid)
+            .map(|f| f.f32(field::OBJECT_SCALE_X))
+            .filter(|s| *s > 0.0)
+            .unwrap_or(1.0);
+        EYE_HEIGHT * scale
+    }
+
+    /// Trace the player's sight lines (`UnitInLineOfSight`'s two passes: both eyes at the shorter
+    /// unit's height, then eye to eye) while a native wants them.
+    pub fn refresh_sight(&mut self, blocked: impl Fn(Vec3, Vec3) -> bool, now: Instant) {
+        self.sight.clear();
+        if !self.sight_wanted_until.is_some_and(|t| now < t) {
+            return;
+        }
+        let Some(me) = self.place(self.player) else {
+            return;
+        };
+        let my_eye = self.eye_height(self.player);
+        let units: Vec<(u64, [f32; 3])> = self
+            .places
+            .iter()
+            .filter(|(g, _)| {
+                **g != self.player && self.object(**g).is_some_and(|f| f.is(typemask::UNIT))
+            })
+            .map(|(g, p)| (*g, p.pos))
+            .collect();
+        for (guid, pos) in units {
+            let d2: f32 = (0..3).map(|i| (pos[i] - me.pos[i]).powi(2)).sum();
+            if d2 > SIGHT_MAX_YARDS * SIGHT_MAX_YARDS {
+                continue;
+            }
+            let their_eye = self.eye_height(guid);
+            let low = my_eye.min(their_eye);
+            let a = bevy_position(me.pos);
+            let b = bevy_position(pos);
+            let clear = |ha: f32, hb: f32| {
+                let (pa, pb) = (a + Vec3::Y * ha, b + Vec3::Y * hb);
+                pa.distance(pb) <= 0.05 || !blocked(pa, pb)
+            };
+            let seen = clear(low, low) || (my_eye != their_eye && clear(my_eye, their_eye));
+            self.sight.insert(guid, seen);
+        }
+    }
+
     /// Refresh the usability verdicts for `spells`: every frame while a native wants them, else
     /// four times a second, so a first ask reads a recent answer.
     pub fn refresh_usable(

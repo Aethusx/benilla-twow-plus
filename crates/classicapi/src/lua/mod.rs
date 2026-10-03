@@ -13,8 +13,11 @@ use mlua::{IntoLua, IntoLuaMulti, Lua, MultiValue, Table, Value};
 use crate::Ca;
 
 mod args;
+mod aura;
 mod core;
+mod nameplate;
 mod spell;
+pub(crate) mod unit;
 
 pub(crate) use args::*;
 
@@ -98,12 +101,23 @@ fn ensure_table(lua: &Lua, parent: &Table, name: &str) -> mlua::Result<Table> {
 /// Install every module's natives, then run the bootstraps; a failure is reported to the script
 /// error handler and leaves the stock interface as it was.
 pub fn install(ca: &Ca, script: &mut UiScript) {
+    // SuperWoW's resolver owns `0x<hex>` literals when it is loaded; it installs first.
+    let superwow: mlua::Value = script
+        .lua()
+        .globals()
+        .get("SUPERWOW_VERSION")
+        .unwrap_or(mlua::Value::Nil);
+    ca.tokens.lock().guid_literals = matches!(superwow, mlua::Value::Nil);
+    script.set_unit_token_extension(ca.tokens.extension());
     let bootstraps = {
         let lua = script.lua();
         let result = (|| -> mlua::Result<Table> {
             let api = Api::new(lua, ca)?;
             core::install(&api)?;
             spell::install(&api)?;
+            nameplate::install(&api)?;
+            aura::install(&api)?;
+            unit::install(&api)?;
             Ok(api.private)
         })();
         match result {

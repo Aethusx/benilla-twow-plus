@@ -61,26 +61,9 @@ fn required_target_level(rec: &Row) -> i32 {
 
 /// `Spell::IsSelfBuff::IsSelfBuff`: every used effect targets none or self, and one is used.
 pub(crate) fn is_self_buff(db: &Databases, spell_id: u32) -> bool {
-    let Some(table) = spells::table(db) else {
-        return false;
-    };
-    let Some(rec) = table.row(spell_id) else {
-        return false;
-    };
-    let mut saw = false;
-    for i in 0..spells::EFFECTS {
-        if rec.i32(col::EFFECT + i) == 0 {
-            continue;
-        }
-        saw = true;
-        let self_only = |t: i32| t == 0 || t == 1;
-        if !self_only(rec.i32(col::EFFECT_IMPLICIT_TARGET_A + i))
-            || !self_only(rec.i32(col::EFFECT_IMPLICIT_TARGET_B + i))
-        {
-            return false;
-        }
-    }
-    saw
+    spells::table(db)
+        .and_then(|t| t.row(spell_id).map(|r| spells::self_buff(&r)))
+        .unwrap_or(false)
 }
 
 fn is_ranged_auto(db: &Databases, id: i64) -> bool {

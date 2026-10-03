@@ -150,18 +150,14 @@ pub fn resolve_string(s: &str) -> Arg {
     }
 }
 
-/// `Guid::Parse`: `0x` and exactly sixteen hex digits.
+/// `Guid::Parse`.
 pub fn parse_guid(s: &str) -> Option<u64> {
-    let hex = s.strip_prefix("0x").or_else(|| s.strip_prefix("0X"))?;
-    if hex.len() != 16 || !hex.bytes().all(|b| b.is_ascii_hexdigit()) {
-        return None;
-    }
-    u64::from_str_radix(hex, 16).ok()
+    crate::guid::parse(s)
 }
 
-/// `"0x%016llX"`, the guid string form.
+/// `Guid::FormatAsString`, the guid string form.
 pub fn guid_string(guid: u64) -> String {
-    format!("0x{guid:016X}")
+    crate::guid::format(guid)
 }
 
 /// What a native needs about one item, read under the lock: entry, roll, stack and the object's
@@ -445,6 +441,7 @@ mod tests {
             Some(0x4000_0000_0000_0123)
         );
         assert_eq!(parse_guid("0x123"), None);
+        assert_eq!(parse_guid("0x00000123"), Some(0x123));
         assert_eq!(guid_string(0x123), "0x0000000000000123");
     }
 }

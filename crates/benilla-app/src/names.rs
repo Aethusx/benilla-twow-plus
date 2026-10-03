@@ -245,6 +245,13 @@ impl NameCache {
         self.generation = self.generation.wrapping_add(1);
     }
 
+    /// Every answered player name, `(guid, name)`.
+    pub(crate) fn players(&self) -> impl Iterator<Item = (u64, &str)> {
+        self.players
+            .iter()
+            .filter_map(|(g, n)| Some((*g, n.as_deref()?)))
+    }
+
     /// The landed-answer counter.
     pub(crate) fn generation(&self) -> u64 {
         self.generation

@@ -539,6 +539,31 @@ impl ExtWorld<'_, '_> {
         ))
     }
 
+    /// A creature's `CreatureFamily.dbc` id, once its template has been queried; 0 for no family
+    /// (anything but a tameable beast or a warlock minion), `None` for a player or an unknown
+    /// template.
+    pub fn creature_family(&self, guid: u64) -> Option<u32> {
+        let entry = self.store(guid)?.0.object_entry()?;
+        Some(self.names.creature_record(entry)?.pet_family)
+    }
+
+    /// A held unit's cached name, with no query on a miss.
+    pub fn unit_name(&self, guid: u64) -> Option<&str> {
+        self.names.peek_unit(guid, self.store(guid))
+    }
+
+    /// Every answered player name, `(guid, name, (race, class, gender))`, the traits present when
+    /// the name query answered them; with [`Self::names_generation`], which moves on each answer.
+    pub fn player_names(&self) -> impl Iterator<Item = (u64, &str, Option<(u8, u8, u8)>)> {
+        self.names
+            .players()
+            .map(|(g, n)| (g, n, self.names.player_traits(g)))
+    }
+
+    pub fn names_generation(&self) -> u64 {
+        self.names.generation()
+    }
+
     /// The world camera's position and forward direction.
     pub fn camera(&self) -> Option<(Vec3, Vec3)> {
         let t = self.camera.single().ok()?;

@@ -219,3 +219,66 @@ pub fn catalog(db: &Databases) -> Option<Arc<benilla_formats::SpellCatalog>> {
 pub fn range_catalog(db: &Databases) -> Option<Arc<benilla_formats::SpellRangeCatalog>> {
     db.catalog(benilla_formats::load_spell_ranges)
 }
+
+/// `SPELL_ATTR_HIDDEN_CLIENTSIDE`, `SPELL_ATTR_EX_NO_AURA_ICON`.
+const ATTR_HIDDEN_CLIENTSIDE: u32 = 0x80;
+const ATTR_EX_NO_AURA_ICON: u32 = 0x1000_0000;
+/// The tracking auras: `SPELL_AURA_TRACK_CREATURES`, `_RESOURCES`, `_STEALTHED`.
+const TRACKING_AURAS: [i32; 3] = [44, 45, 151];
+
+/// `FUN_SPELL_IS_VISIBLE_AURA` and the tooltip's `FUN_GAMETOOLTIP_AURA_VISIBLE`: not hidden
+/// client-side, not iconless, not a tracking aura. Deviation: the reference's immunity-bitmap leg
+/// (`+0x2B0`) is not read; benilla's own aura rows skip it too.
+pub fn aura_visible(rec: &Row) -> bool {
+    rec.u32(col::ATTRIBUTES) & ATTR_HIDDEN_CLIENTSIDE == 0
+        && rec.u32(col::ATTRIBUTES_EX) & ATTR_EX_NO_AURA_ICON == 0
+        && !(0..EFFECTS).any(|i| TRACKING_AURAS.contains(&rec.i32(col::EFFECT_APPLY_AURA_NAME + i)))
+}
+
+/// `Spell::IsSelfBuff::IsSelfBuff`: every used effect targets none or self, and one is used.
+pub fn self_buff(rec: &Row) -> bool {
+    let mut saw = false;
+    for i in 0..EFFECTS {
+        if rec.i32(col::EFFECT + i) == 0 {
+            continue;
+        }
+        saw = true;
+        let self_only = |t: i32| t == 0 || t == 1;
+        if !self_only(rec.i32(col::EFFECT_IMPLICIT_TARGET_A + i))
+            || !self_only(rec.i32(col::EFFECT_IMPLICIT_TARGET_B + i))
+        {
+            return false;
+        }
+    }
+    saw
+}
+
+fn has_aura(rec: &Row, aura: i32) -> bool {
+    (0..EFFECTS).any(|i| rec.i32(col::EFFECT_APPLY_AURA_NAME + i) == aura)
+}
+
+/// `Spell::CrowdControl::Classify`: the loss-of-control type a spell's aura imposes, in the
+/// reference's precedence.
+pub fn crowd_control(rec: &Row) -> Option<&'static str> {
+    [
+        (2, "POSSESS"),
+        (6, "CHARM"),
+        (12, "STUN"),
+        (7, "FEAR"),
+        (5, "CONFUSE"),
+        (60, "PACIFYSILENCE"),
+        (27, "SILENCE"),
+        (25, "PACIFY"),
+        (26, "ROOT"),
+        (67, "DISARM"),
+    ]
+    .into_iter()
+    .find(|(aura, _)| has_aura(rec, *aura))
+    .map(|(_, name)| name)
+}
+
+/// `Spell::CrowdControl::IsCrowdControl`: a classified control or a snare
+/// (`SPELL_AURA_MOD_DECREASE_SPEED`).
+pub fn is_crowd_control(rec: &Row) -> bool {
+    crowd_control(rec).is_some() || has_aura(rec, 33)
+}

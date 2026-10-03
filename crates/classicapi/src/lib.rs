@@ -13,13 +13,15 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Instant;
 
 use benilla_app::ext::{
-    ExtCancelAura, ExtCastSet, ExtRange, ExtUsable, ExtView, ExtWorld, ScriptInstallers,
-    ScriptValue, UiScript,
+    CastOutcome, ExtCancelAura, ExtCastNote, ExtCastSet, ExtRange, ExtUnitTokens, ExtUsable,
+    ExtView, ExtWorld, ScriptInstallers, ScriptValue, UiScript,
 };
 use bevy::prelude::*;
 
+pub mod aura;
 pub mod cooldown;
 pub mod dbc;
+pub mod guid;
 pub mod items;
 mod lua;
 pub mod mirror;
@@ -27,6 +29,7 @@ mod net;
 pub mod spellmod;
 pub mod spells;
 pub mod talents;
+pub mod tokens;
 
 /// The ClassicAPI release this port follows.
 pub const VERSION: (u32, u32, u32) = (1, 15, 16);
@@ -48,6 +51,54 @@ pub struct State {
     events: Vec<(&'static str, Vec<ScriptValue>)>,
     /// Our auras to cancel, `CMSG_CANCEL_AURA` each.
     cancels: Vec<u32>,
+    /// The nameplate diff: last frame's `(guid, frame)` pairs and every frame ever announced.
+    plates_last: Vec<(u64, u32)>,
+    plates_seen: std::collections::HashSet<u32>,
+    /// The plate whose `NAME_PLATE_UNIT_REMOVED` is being dispatched, `(guid, frame)`: its unit
+    /// binding is already gone, so `GetNamePlateForUnit` answers from here (`PlateBeingRemoved`).
+    pub plate_removing: Option<(u64, u32)>,
+    /// The player's form byte at the last frame, `UPDATE_SHAPESHIFT_FORM`'s edge.
+    last_form: Option<u8>,
+    /// `Unit::MirrorTimer`'s three slots by timer type: EXHAUSTION, BREATH, FEIGNDEATH.
+    pub mirror_timers: [Option<MirrorTimer>; 3],
+    /// Whether the mouseover named a unit last frame, `UPDATE_MOUSEOVER_UNIT`'s loss edge.
+    mouseover_unit: bool,
+    /// Every aura's caster and expiry (`Aura::Source`).
+    pub auras: aura::Source,
+}
+
+/// One mirror timer as its last packet left it.
+#[derive(Clone, Copy, Debug)]
+pub struct MirrorTimer {
+    pub kind: u32,
+    /// The value the packet carried, ms.
+    pub value: i64,
+    pub max: i64,
+    /// Bar ms per ms: -1 draining, positive refilling.
+    pub scale: i64,
+    pub paused: bool,
+    pub spell_id: u32,
+    /// When `value` held.
+    pub base: std::time::Instant,
+}
+
+impl MirrorTimer {
+    /// `LiveValue`: the packet's value plus `elapsed * scale`, clamped to `0..=max`, frozen while
+    /// paused.
+    pub fn live(&self, now: std::time::Instant) -> i64 {
+        if self.paused {
+            return self.value;
+        }
+        let elapsed = now.saturating_duration_since(self.base).as_millis() as i64;
+        let v = self.value + elapsed * self.scale;
+        if v < 0 {
+            0
+        } else if self.max > 0 && v > self.max {
+            self.max
+        } else {
+            v
+        }
+    }
 }
 
 impl State {
@@ -62,16 +113,41 @@ impl State {
     }
 }
 
-/// The shared state and the client databases.
+/// The shared state, the token table and the client databases.
 #[derive(Resource, Clone, Default)]
 pub struct Ca {
     state: Arc<Mutex<State>>,
+    pub tokens: tokens::Tokens,
     pub db: Arc<dbc::Databases>,
 }
 
 impl Ca {
     pub fn lock(&self) -> MutexGuard<'_, State> {
         self.state.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// The aura cache and what it reads, under the lock.
+    pub fn with_auras<R>(&self, f: impl FnOnce(&mut aura::Source, &aura::Env) -> R) -> R {
+        let spells = spells::table(&self.db);
+        let durations = self.db.get("SpellDuration");
+        let mut st = self.lock();
+        let family = spellmod::player_family(&self.db, &st.mirror);
+        let State {
+            auras,
+            mirror,
+            mods,
+            known,
+            ..
+        } = &mut *st;
+        let env = aura::Env {
+            spells: spells.as_deref(),
+            durations: durations.as_deref(),
+            mirror,
+            mods,
+            family,
+            known,
+        };
+        f(auras, &env)
     }
 }
 
@@ -85,20 +161,41 @@ impl Plugin for ClassicApiPlugin {
             installers.add(move |_, script| lua::install(&ca, script));
         }
         net::register(app);
+        app.add_message::<ExtCastNote>();
         app.add_systems(Update, frame.in_set(ExtCastSet));
     }
+}
+
+/// Everything the frame reads off the world.
+#[derive(bevy::ecs::system::SystemParam)]
+struct Inputs<'w, 's> {
+    view: ExtView<'w, 's>,
+    world: ExtWorld<'w, 's>,
+    range: ExtRange<'w, 's>,
+    usable: ExtUsable<'w, 's>,
+    collision: benilla_world::collision::WorldCollision<'w, 's>,
+    point: benilla_world::world_point::WorldPoint<'w, 's>,
+    map: Option<Res<'w, benilla_world::world_map::CurrentMap>>,
 }
 
 /// The frame: mirror the world, then fire the events the net handlers and the natives queued.
 fn frame(
     ca: Res<Ca>,
-    view: ExtView,
-    world: ExtWorld,
-    range: ExtRange,
-    usable: ExtUsable,
+    inputs: Inputs,
     mut cancels: MessageWriter<ExtCancelAura>,
+    mut ext_tokens: ResMut<ExtUnitTokens>,
+    mut notes: MessageReader<ExtCastNote>,
     script: Option<NonSendMut<UiScript>>,
 ) {
+    let Inputs {
+        view,
+        world,
+        range,
+        usable,
+        collision,
+        point,
+        map,
+    } = inputs;
     let now = Instant::now();
     // `GetTime()` read with the lock free, so the mirror can put instants on its clock.
     let ui_now = script.as_deref().and_then(|s| {
@@ -108,9 +205,72 @@ fn frame(
             .and_then(|f| f.call::<f64>(()))
             .ok()
     });
-    let (events, cancel) = {
+    // `Turtle::Detected`: the realm's interface sets `TURTLE_WOW_VERSION`.
+    let turtle = script.as_deref().is_some_and(|s| {
+        matches!(
+            s.lua().globals().get::<mlua::Value>("TURTLE_WOW_VERSION"),
+            Ok(mlua::Value::String(_))
+        )
+    });
+    let sent: Vec<u32> = notes
+        .read()
+        .filter(|n| matches!(n.outcome, CastOutcome::Sent))
+        .map(|n| n.spell_id)
+        .collect();
+    let changes = {
         let mut st = ca.lock();
-        st.mirror.refresh(&view, &world, &range, now);
+        st.mirror.refresh(&view, &world, &range, now)
+    };
+    let aura_signals = ca.with_auras(|auras, env| {
+        auras.turtle |= turtle;
+        if auras.turtle {
+            auras.register_turtle(env);
+        }
+        // `ComboDuration`'s send hook: the points a finisher leaves with.
+        let points = env
+            .mirror
+            .me()
+            .map_or(0, |f| f.byte(mirror::field::PLAYER_BYTES_FIELD, 1));
+        for &spell in &sent {
+            auras.capture_combo(spell, points);
+            if auras.turtle {
+                auras.carnage_arm(env, spell);
+            }
+        }
+        for c in &changes {
+            if let Some(new) = env.mirror.object(c.guid) {
+                auras.diff(env, c.guid, c.old.as_ref(), new);
+            }
+        }
+        auras.tick(env);
+        auras.take_signals()
+    });
+    let (events, cancel, focus_lost) = {
+        let mut st = ca.lock();
+        st.mirror.map_id = map.as_deref().map_or(0, |m| m.0);
+        st.mirror.indoors = (st.mirror.player != 0).then(|| point.interior().is_some());
+        st.mirror
+            .refresh_sight(|a, b| collision.sight(a, b).is_some(), now);
+        let focus_lost = upkeep_tokens(&ca.tokens, &st.mirror, &view);
+        // `UPDATE_SHAPESHIFT_FORM`, argless, when the form byte (`UNIT_FIELD_BYTES_1` byte 2)
+        // moves; an unresolved player is no change.
+        if let Some(form) = st
+            .mirror
+            .me()
+            .map(|f| f.byte(mirror::field::UNIT_BYTES_1, 2))
+        {
+            if st.last_form.is_some_and(|l| l != form) {
+                st.emit("UPDATE_SHAPESHIFT_FORM", vec![]);
+            }
+            st.last_form = Some(form);
+        }
+        // `Unit::Mouseover`: the engine fires `UPDATE_MOUSEOVER_UNIT` on a gain only; a unit
+        // mouseover lost (to nothing or a GameObject) fires it too, as retail does.
+        let mouseover_unit = view.unit_guid("mouseover").is_some();
+        if st.mouseover_unit && !mouseover_unit {
+            st.emit("UPDATE_MOUSEOVER_UNIT", vec![]);
+        }
+        st.mouseover_unit = mouseover_unit;
         let known = st.known.clone();
         st.mirror.refresh_usable(&usable, &known, now);
         if let Some(t) = ui_now {
@@ -119,6 +279,7 @@ fn frame(
         (
             std::mem::take(&mut st.events),
             std::mem::take(&mut st.cancels),
+            focus_lost,
         )
     };
     for spell_id in cancel {
@@ -127,7 +288,92 @@ fn frame(
     let Some(mut script) = script else {
         return;
     };
+    if focus_lost {
+        script.queue_event("PLAYER_FOCUS_CHANGED", vec![]);
+    }
+    sync_nameplates(&ca, &mut script);
+    let named = ca.tokens.lock().named();
+    let guids: Vec<u64> = named.iter().map(|(_, g)| *g).collect();
+    script.set_extra_unit_guids_for("classicapi", guids);
+    if ext_tokens.0 != named {
+        ext_tokens.0 = named;
+    }
     for (name, args) in events {
         script.queue_event(name, args);
+    }
+    // A cached duration edit has no descriptor write behind it: `UNIT_AURA` once per token.
+    for guid in aura_signals {
+        for token in lua::unit::identity::tokens_for_guid(script.lua(), &ca, guid) {
+            script.queue_event("UNIT_AURA", vec![ScriptValue::Str(token)]);
+        }
+    }
+}
+
+/// The token table's per-frame half: the marks off the raid-target table, and the focus dropped
+/// once its unit leaves the object table, unless it is a groupmate, whose roster guid outlives
+/// its object (3.3.5's `FUN_00512a30` gate). Whether focus was dropped.
+fn upkeep_tokens(tokens: &tokens::Tokens, m: &mirror::Mirror, view: &ExtView) -> bool {
+    let mut t = tokens.lock();
+    t.marks = m.marks;
+    if t.focus != 0 && !view.is_streamed(t.focus) && !m.group.contains(&t.focus) {
+        t.focus = 0;
+        return true;
+    }
+    false
+}
+
+/// `NamePlate::Events::OnWorldTick`: diff the plates bound this frame against last frame's.
+/// A frame never seen fires `NAME_PLATE_CREATED` with the frame; a new unit takes a slot and
+/// fires `NAME_PLATE_UNIT_ADDED("nameplateN")`; a gone unit fires `NAME_PLATE_UNIT_REMOVED` with
+/// its slot's token, then frees it.
+fn sync_nameplates(ca: &Ca, script: &mut UiScript) {
+    let live = benilla_ui::script::ext_read::nameplates(script.lua());
+    let (created, added, removed) = {
+        let mut st = ca.lock();
+        let mut created = Vec::new();
+        for (_, frame) in &live {
+            if st.plates_seen.insert(*frame) {
+                created.push(*frame);
+            }
+        }
+        let added: Vec<u64> = live
+            .iter()
+            .filter(|(g, _)| !st.plates_last.iter().any(|(l, _)| l == g))
+            .map(|(g, _)| *g)
+            .collect();
+        let removed: Vec<(u64, u32)> = st
+            .plates_last
+            .iter()
+            .filter(|(g, _)| !live.iter().any(|(l, _)| l == g))
+            .copied()
+            .collect();
+        st.plates_last = live.clone();
+        (created, added, removed)
+    };
+    for frame in created {
+        script.fire_event("NAME_PLATE_CREATED", vec![ScriptValue::Object(frame)]);
+    }
+    for guid in added {
+        let slot = ca.tokens.lock().assign_plate(guid);
+        script.fire_event(
+            "NAME_PLATE_UNIT_ADDED",
+            vec![ScriptValue::Str(format!("nameplate{}", slot + 1))],
+        );
+    }
+    for (guid, frame) in removed {
+        let Some(slot) = ca.tokens.lock().plate_index(guid) else {
+            continue;
+        };
+        // A frame rebound to another unit this frame belongs to that unit now.
+        let reassigned = live.iter().any(|(_, f)| *f == frame);
+        if !reassigned {
+            ca.lock().plate_removing = Some((guid, frame));
+        }
+        script.fire_event(
+            "NAME_PLATE_UNIT_REMOVED",
+            vec![ScriptValue::Str(format!("nameplate{slot}"))],
+        );
+        ca.lock().plate_removing = None;
+        ca.tokens.lock().free_plate(guid);
     }
 }

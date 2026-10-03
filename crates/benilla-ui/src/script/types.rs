@@ -11,6 +11,9 @@ pub enum ScriptValue {
     Int(i64),
     Number(f64),
     Str(String),
+    /// A frame by its object id, which reaches Lua as the frame's own table; nil once the frame
+    /// is gone.
+    Object(u32),
 }
 
 impl ScriptValue {
@@ -21,6 +24,10 @@ impl ScriptValue {
             ScriptValue::Int(i) => Value::Integer(i),
             ScriptValue::Number(n) => Value::Number(n),
             ScriptValue::Str(s) => Value::String(lua.create_string(&s)?),
+            ScriptValue::Object(id) => match super::object::frame_wrapper(lua, id) {
+                Ok(t) => Value::Table(t),
+                Err(_) => Value::Nil,
+            },
         })
     }
 }
