@@ -257,8 +257,22 @@ pub(crate) fn invoke_with_globals(
         g.set(arg_name(i + 1).as_ref(), v.clone())?;
     }
 
-    // A protected call; the globals are restored before its outcome returns.
-    let outcome = func.call::<()>(());
+    // A protected call; the globals are restored before its outcome returns. With modern script
+    // args on (a crate on top's choice), the handler also gets them as real arguments.
+    let modern = lua
+        .app_data_ref::<super::Model>()
+        .is_some_and(|m| m.modern_script_args);
+    let outcome = if modern {
+        let mut args = Vec::with_capacity(n + 2);
+        args.push(Value::Table(wrapper));
+        if let Some(ev) = event_name {
+            args.push(Value::String(lua.create_string(ev)?));
+        }
+        args.extend(extra);
+        func.call::<()>(mlua::MultiValue::from_vec(args))
+    } else {
+        func.call::<()>(())
+    };
 
     g.set("this", saved_this)?;
     g.set("event", saved_event)?;

@@ -146,7 +146,7 @@ mod worn_display;
 mod zone_text;
 
 pub use action::{ActionSlot, ActionState, ActionUse};
-pub use addon::AddOnInfo;
+pub use addon::{AddOnInfo, EmbeddedAddon};
 pub use addon_enable::EnableHash;
 pub use addon_message::{AddonDistribution, AddonSend};
 pub use auction::{
@@ -779,11 +779,13 @@ impl UiScript {
 
     /// Run a chunk under the name the 1.12 client gives it ([`addon_chunk_name`] for addon files).
     pub fn run_chunk_named(&self, chunk: &[u8], name: &str) -> mlua::Result<()> {
-        self.lua
-            .load(crate::source::chunk(chunk))
-            .set_name(name)
-            .set_mode(mlua::ChunkMode::Text)
-            .exec()
+        crate::source::compile(
+            &self.lua,
+            crate::source::chunk(chunk),
+            name,
+            crate::source::ChunkKind::File,
+        )?
+        .call(())
     }
 
     /// Load and evaluate a Lua chunk, returning its result: for tests and one-shot queries.

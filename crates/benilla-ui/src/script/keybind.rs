@@ -433,11 +433,8 @@ pub(crate) fn run_command(lua: &Lua, command: &str, down: bool) -> mlua::Result<
     };
     let g = lua.globals();
     g.set("keystate", if down { "down" } else { "up" })?;
-    let ran = lua
-        .load(body.as_str())
-        .set_name(name)
-        .set_mode(mlua::ChunkMode::Text)
-        .exec();
+    let ran = crate::source::compile(lua, body.as_bytes(), &name, crate::source::ChunkKind::Other)
+        .and_then(|f| f.call::<()>(()));
     g.set("keystate", Value::Nil)?;
     ran.map(|()| true)
 }

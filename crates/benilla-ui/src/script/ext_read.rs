@@ -184,3 +184,33 @@ pub fn proficiency_mask(lua: &Lua, item_class: u32) -> Option<u32> {
         .get(&item_class)
         .copied()
 }
+
+/// An addon's `## <key>:` directive as its manifest gives it, by folder name; `None` for an
+/// unknown addon or an absent directive.
+pub fn addon_directive(lua: &Lua, addon: &str, key: &str) -> Option<String> {
+    let model = lua.app_data_ref::<Model>()?;
+    let a = model
+        .addons
+        .iter()
+        .find(|a| a.name.eq_ignore_ascii_case(addon))?;
+    a.directives
+        .iter()
+        .rev()
+        .find(|(k, _)| k.eq_ignore_ascii_case(key))
+        .map(|(_, v)| v.clone())
+}
+
+/// Turn modern script arguments on or off: every handler also gets `(self, [event,]
+/// arg1..argN)` as real arguments, beside the `this`/`event`/`argN` globals 1.12 sets. Off by
+/// default; a crate on top that backports the modern calling convention turns it on.
+pub fn set_modern_script_args(lua: &Lua, on: bool) {
+    if let Some(mut m) = lua.app_data_mut::<Model>() {
+        m.modern_script_args = on;
+    }
+}
+
+/// Whether modern script arguments are on.
+pub fn modern_script_args(lua: &Lua) -> bool {
+    lua.app_data_ref::<Model>()
+        .is_some_and(|m| m.modern_script_args)
+}

@@ -126,12 +126,9 @@ pub(super) fn install(lua: &Lua) -> mlua::Result<()> {
             }
             // The chunk name is the source bytes as given (1).
             let name = String::from_utf8_lossy(&raw).into_owned();
-            if let Err(e) = lua
-                .load(&*raw)
-                .set_name(name)
-                .set_mode(mlua::ChunkMode::Text)
-                .exec()
-            {
+            let ran = crate::source::compile(lua, &raw, &name, crate::source::ChunkKind::Other)
+                .and_then(|f| f.call::<()>(()));
+            if let Err(e) = ran {
                 lua.app_data_mut::<crate::script::Model>()
                     .expect("model")
                     .record_script_error(super::stdlib::lua_message(&e));

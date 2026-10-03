@@ -119,3 +119,56 @@ mod tests {
         assert!(text.contains("ABC"));
     }
 }
+
+/// What a chunk is, for a [`Transform`]: a file the loader runs at once, or anything else
+/// (`loadstring`, `RunScript`, a handler body, a binding body).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ChunkKind {
+    File,
+    Other,
+}
+
+/// A rewrite of a chunk's source before it compiles, at the one funnel every compile goes
+/// through, as the reference's all go through `luaL_loadbuffer` (`0x6f5690`). `Some((source,
+/// wrapped))` replaces the source; `wrapped` says the new source returns the real chunk as a
+/// function, which the funnel calls once to get it. benilla installs none: a crate on top does.
+pub type Transform = Box<dyn Fn(&[u8], &str, ChunkKind) -> Option<(Vec<u8>, bool)> + Send + Sync>;
+
+struct TransformSlot(Transform);
+
+/// Install the VM's source transform, replacing any before it.
+pub fn set_transform(lua: &mlua::Lua, t: Transform) {
+    lua.set_app_data(TransformSlot(t));
+}
+
+/// Compile a chunk (BOM and `#`-line already stripped by the caller where it should be) under
+/// `name`, through the installed [`Transform`] when there is one.
+pub fn compile(
+    lua: &mlua::Lua,
+    bytes: &[u8],
+    name: &str,
+    kind: ChunkKind,
+) -> mlua::Result<mlua::Function> {
+    let rewritten = lua
+        .app_data_ref::<TransformSlot>()
+        .and_then(|t| (t.0)(bytes, name, kind));
+    match rewritten {
+        Some((src, wrapped)) => {
+            let f = lua
+                .load(&src[..])
+                .set_name(name)
+                .set_mode(mlua::ChunkMode::Text)
+                .into_function()?;
+            if wrapped {
+                f.call::<mlua::Function>(())
+            } else {
+                Ok(f)
+            }
+        }
+        None => lua
+            .load(bytes)
+            .set_name(name)
+            .set_mode(mlua::ChunkMode::Text)
+            .into_function(),
+    }
+}

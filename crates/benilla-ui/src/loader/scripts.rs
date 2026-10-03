@@ -92,13 +92,12 @@ impl Loader<'_> {
         if body.is_empty() {
             return None;
         }
-        match self
-            .lua()
-            .load(body)
-            .set_name(format!("{owner}:{name}"))
-            .set_mode(mlua::ChunkMode::Text)
-            .into_function()
-        {
+        match crate::source::compile(
+            self.lua(),
+            body.as_bytes(),
+            &format!("{owner}:{name}"),
+            crate::source::ChunkKind::Other,
+        ) {
             Ok(f) => Some(f),
             Err(e) => {
                 self.report

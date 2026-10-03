@@ -63,6 +63,14 @@ impl<T: Copy> IdMap<T> {
 pub(crate) struct Model {
     /// Every discovered addon in load order: the AddOn API's registry, filled at world entry.
     pub(crate) addons: Vec<super::addon::AddOnInfo>,
+    /// Addons a crate on top ships in its binary ([`super::UiScript::add_embedded_addon`]).
+    pub(crate) embedded_addons: Vec<super::addon::EmbeddedAddon>,
+    /// Whether `## LoadSavedVariablesFirst` is honoured
+    /// ([`super::UiScript::honor_saved_variables_first`]); off, as in 1.12.
+    pub(crate) saved_variables_first: bool,
+    /// Whether script handlers also get `(self, [event,] arg1..argN)` as real arguments
+    /// ([`super::ext_read::set_modern_script_args`]); off, as 1.12 calls every handler with none.
+    pub(crate) modern_script_args: bool,
     /// The Lua index space into `addons`, a title-sorted, hidden-filtered list (`0x51da70`).
     pub(crate) addon_index: Vec<usize>,
     /// Lowercased names `SMSG_ADDON_INFO` marked `status = 2`; `None` until the reply arrives, and
@@ -1072,6 +1080,9 @@ impl Model {
     pub(crate) fn new() -> Model {
         Model {
             addons: Vec::new(),
+            embedded_addons: Vec::new(),
+            saved_variables_first: false,
+            modern_script_args: false,
             addon_index: Vec::new(),
             addon_info_hidden: None,
             addon_enable: Default::default(),

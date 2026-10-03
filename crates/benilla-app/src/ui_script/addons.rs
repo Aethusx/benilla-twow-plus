@@ -31,6 +31,9 @@ pub(super) enum Source {
     Dir(PathBuf),
     /// The player's patch chain ([`super::reference_ui`]), by full chain path, `/` and `\` alike.
     Chain,
+    /// A crate on top's addon, its files in the binary ([`benilla_ui::script::EmbeddedAddon`]);
+    /// a path outside its folder reads as a `Dir` one does.
+    Embedded(benilla_ui::script::EmbeddedAddon, Option<PathBuf>),
 }
 
 /// One loadable interface: a name, its parsed manifest, and where its files come from.
@@ -85,6 +88,19 @@ impl Addon {
             }
             Source::Dir(root) => read_addon_file(root, req),
             Source::Chain => super::reference_ui::read(req),
+            Source::Embedded(e, root) => {
+                let own = under_addons(req).and_then(|rel| {
+                    let (folder, file) = rel.split_once(['/', '\\'])?;
+                    folder.eq_ignore_ascii_case(&e.name).then_some(file)
+                });
+                match own {
+                    Some(file) => e.file(file).map(<[u8]>::to_vec),
+                    None => root
+                        .as_deref()
+                        .and_then(|r| read_addon_file(r, req))
+                        .or_else(|| super::reference_ui::read(&req.replace('/', "\\"))),
+                }
+            }
         }
     }
 
@@ -93,7 +109,7 @@ impl Addon {
     fn prefix(&self) -> String {
         match &self.source {
             Source::Builtin | Source::Chain => String::new(),
-            Source::Dir(_) => format!("{ADDONS_PREFIX}{}", self.name),
+            Source::Dir(_) | Source::Embedded(..) => format!("{ADDONS_PREFIX}{}", self.name),
         }
     }
 
@@ -104,7 +120,9 @@ impl Addon {
     fn chunk_name(&self, file: &str, path: &str) -> String {
         match &self.source {
             Source::Builtin => benilla_ui::script::addon_chunk_name(&self.name, file),
-            Source::Dir(_) | Source::Chain => format!("@{}", path.replace('/', "\\")),
+            Source::Dir(_) | Source::Chain | Source::Embedded(..) => {
+                format!("@{}", path.replace('/', "\\"))
+            }
         }
     }
 
@@ -146,7 +164,7 @@ impl Addon {
                 // `smoke.sh`.
                 match self.source {
                     Source::Builtin | Source::Chain => error!("ui_script: {e}"),
-                    Source::Dir(_) => warn!("ui_script: {e}"),
+                    Source::Dir(_) | Source::Embedded(..) => warn!("ui_script: {e}"),
                 }
                 // Retained for the player: the commonest way an addon fails with nothing on screen.
                 script.report_load_failure(&e);
@@ -205,7 +223,7 @@ impl Addon {
                 let e = format!("{}/{file}: {m}", self.name);
                 match self.source {
                     Source::Builtin | Source::Chain => error!("ui_script: {e}"),
-                    Source::Dir(_) => warn!("ui_script: {e}"),
+                    Source::Dir(_) | Source::Embedded(..) => warn!("ui_script: {e}"),
                 }
                 script.report_load_failure(&e);
                 failures.push(e);
@@ -326,9 +344,28 @@ fn chain_addons() -> Vec<Addon> {
 /// (`0x42ad10`), and `0x51c9b0` returns on a name-hash hit (`0x51ca10`) and tail-inserts
 /// (`0x521ad0`). That order is the Lua index space, and in the one shared Lua state (`0x7040d0`)
 /// it decides whose copy of a global wins.
-fn discover() -> Vec<Addon> {
+fn discover(embedded: &[benilla_ui::script::EmbeddedAddon]) -> Vec<Addon> {
+    // A crate on top's embedded addons register first, so they load first, ahead of anything a
+    // folder of the same name would hold.
+    let mut found: Vec<Addon> = embedded
+        .iter()
+        .filter_map(|e| {
+            let toc = e.file(&format!("{}.toc", e.name))?;
+            Some(Addon {
+                name: e.name.clone(),
+                toc: Toc::parse(&benilla_ui::source::decode(toc)),
+                source: Source::Embedded(e.clone(), root()),
+            })
+        })
+        .collect();
     // The archive pass, in `BLIZZARD_ADDONS` order: the shipped `patch.MPQ` listfile's too.
-    let mut found = chain_addons();
+    let embedded_names: HashSet<String> =
+        found.iter().map(|a| a.name.to_ascii_lowercase()).collect();
+    found.extend(
+        chain_addons()
+            .into_iter()
+            .filter(|a| !embedded_names.contains(&a.name.to_ascii_lowercase())),
+    );
     // The loose pass, minus the names the archive registered.
     let seen: HashSet<String> = found.iter().map(|a| a.name.to_ascii_lowercase()).collect();
     found.extend(
@@ -751,7 +788,7 @@ pub(super) fn load_third_party(
     roster: &[String],
     version_check: bool,
 ) -> Vec<String> {
-    let addons = discover();
+    let addons = discover(&script.embedded_addons());
     // Registered even when empty: `GetNumAddOns()` must answer 0, not a previous session's list.
     let mut infos: Vec<_> = addons.iter().map(info_for).collect();
     // Chain rows read their files off the player's patch chain.
@@ -927,6 +964,16 @@ impl Walk {
 
         // The add-on's record: its `.toc`'s under that banner (`0x6eddc8`), then its own banner
         // (`0x51f464`), merged into the UI load's.
+        // `## LoadSavedVariablesFirst`, when a crate on top asked for it: the saved variables run
+        // before the files, so file-scope code sees them, and not again after.
+        let sv_first = script.saved_variables_first()
+            && addon
+                .toc
+                .directive("LoadSavedVariablesFirst")
+                .is_some_and(|v| v.trim().parse::<i64>().is_ok_and(|n| n != 0));
+        if sv_first {
+            script.load_addon_saved_variables(&addon.name);
+        }
         let debug = script.framexml_debug();
         let mut toc = Status::default();
         self.failures.extend(addon.load(script, &mut toc));
@@ -952,7 +999,9 @@ impl Walk {
         }
         // The saved variables, account then per-character (`0x51f4b5`, `0x51f53b`): after the
         // files set their defaults, before `ADDON_LOADED`.
-        script.load_addon_saved_variables(&addon.name);
+        if !sv_first {
+            script.load_addon_saved_variables(&addon.name);
+        }
         self.loaded.insert(addon.name.clone());
         script.mark_addon_loaded(&addon.name);
         // `arg1` is the addon's own folder name, whatever case a dependent used. Marked loaded
@@ -1094,7 +1143,7 @@ mod tests {
         );
         write_addon(&home, "Loose", "## Interface: 11200\n", &[]);
 
-        let found = discover();
+        let found = discover(&[]);
         let names: Vec<&str> = found.iter().map(|a| a.name.as_str()).collect();
 
         let first_loose = names.iter().position(|n| *n == "Loose").expect("Loose");

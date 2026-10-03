@@ -676,10 +676,13 @@ fn read_under(root: &std::path::Path, rel: &str) -> Option<Vec<u8>> {
 /// Run a chunk read off disk, BOM stripped: [`crate::script::UiScript::run_chunk`] for the
 /// demand-load path, which has no `UiScript`.
 fn run_chunk(lua: &Lua, bytes: &[u8], name: &str) -> mlua::Result<()> {
-    lua.load(crate::source::chunk(bytes))
-        .set_name(name)
-        .set_mode(mlua::ChunkMode::Text)
-        .exec()
+    crate::source::compile(
+        lua,
+        crate::source::chunk(bytes),
+        name,
+        crate::source::ChunkKind::File,
+    )?
+    .call(())
 }
 
 /// Record a demand-load error as the startup walk does ([`super::UiScript::report_script_error`]):
@@ -692,8 +695,56 @@ fn log_error(lua: &Lua, msg: &str) {
     model.errors.push(msg);
 }
 
+/// An addon a crate on top ships inside its binary: its folder name and every file, keyed by the
+/// path under the folder (`Util/Mixin.lua`, `!!!ClassicAPI.toc`). The startup walk registers it
+/// first and reads its files from here; a disk folder of the same name is not registered.
+#[derive(Clone, Debug)]
+pub struct EmbeddedAddon {
+    pub name: String,
+    pub files: std::sync::Arc<Vec<(String, &'static [u8])>>,
+}
+
+impl EmbeddedAddon {
+    /// A file by its path under the folder, `/` and `\` alike and in any case, as the reference
+    /// is a Windows client.
+    pub fn file(&self, rel: &str) -> Option<&'static [u8]> {
+        let want = rel.replace('\\', "/");
+        self.files
+            .iter()
+            .find(|(p, _)| p.replace('\\', "/").eq_ignore_ascii_case(&want))
+            .map(|(_, b)| *b)
+    }
+}
+
 /// The host's side: the registry, where its files live, and what to write back.
 impl super::UiScript {
+    /// Register an addon a crate on top ships in its binary, for the startup walk; call from a
+    /// script installer, which runs on every VM before the UI loads.
+    pub fn add_embedded_addon(&mut self, addon: EmbeddedAddon) {
+        let mut model = self.model_mut();
+        model
+            .embedded_addons
+            .retain(|a| !a.name.eq_ignore_ascii_case(&addon.name));
+        model.embedded_addons.push(addon);
+    }
+
+    /// The embedded addons, in registration order.
+    pub fn embedded_addons(&self) -> Vec<EmbeddedAddon> {
+        self.model_ref().embedded_addons.clone()
+    }
+
+    /// Honour the modern `## LoadSavedVariablesFirst: 1` directive: such an addon's saved
+    /// variables run before its files rather than after them. Off by default, as 1.12 never
+    /// reads the directive; a crate on top turns it on.
+    pub fn honor_saved_variables_first(&mut self, on: bool) {
+        self.model_mut().saved_variables_first = on;
+    }
+
+    /// Whether [`Self::honor_saved_variables_first`] is on.
+    pub fn saved_variables_first(&self) -> bool {
+        self.model_ref().saved_variables_first
+    }
+
     /// Seat the reader chain-sourced addons (`AddOnInfo::chain`) are read through.
     pub fn set_addon_chain_reader(&self, reader: AddonChainReader) {
         self.model_mut().addons_chain_reader = Some(std::rc::Rc::from(reader));

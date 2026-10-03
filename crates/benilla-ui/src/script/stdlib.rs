@@ -69,11 +69,7 @@ pub(super) fn sandbox(lua: &Lua) -> mlua::Result<()> {
                 Some(n) => String::from_utf8_lossy(&n.as_bytes()).into_owned(),
                 None => String::from_utf8_lossy(&raw).into_owned(),
             };
-            let chunk = lua
-                .load(bytes)
-                .set_name(name)
-                .set_mode(mlua::ChunkMode::Text);
-            match chunk.into_function() {
+            match crate::source::compile(lua, &bytes, &name, crate::source::ChunkKind::Other) {
                 Ok(f) => Ok((Value::Function(f), Value::Nil)),
                 // The failure leg returns nil and Lua's own message, unprefixed (`0x7032c6`,
                 // `0x7032d2`).
