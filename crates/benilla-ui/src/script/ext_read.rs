@@ -276,3 +276,37 @@ pub fn cursor(lua: &Lua) -> Option<CursorView> {
         P::PetAction(_) | P::StablePet(_) => CursorView::Other,
     })
 }
+
+/// Add a method every region answers (frames of every kind, textures, font strings, title
+/// regions), for a crate on top that backports a later client's region API. An existing method
+/// of the same name is left alone: the 1.12 one wins.
+pub fn add_region_method(lua: &Lua, name: &str, f: mlua::Function) -> mlua::Result<()> {
+    for key in [
+        super::REG_FRAME_METHODS,
+        super::REG_TEXTURE_METHODS,
+        super::REG_FONTSTRING_METHODS,
+        super::REG_TITLE_METHODS,
+    ] {
+        let t: mlua::Table = lua.named_registry_value(key)?;
+        if t.raw_get::<mlua::Value>(name)?.is_nil() {
+            t.raw_set(name, f.clone())?;
+        }
+    }
+    Ok(())
+}
+
+/// Add a method every frame answers, whatever its kind, the 1.12 one winning as above.
+pub fn add_frame_method(lua: &Lua, name: &str, f: mlua::Function) -> mlua::Result<()> {
+    let t: mlua::Table = lua.named_registry_value(super::REG_FRAME_METHODS)?;
+    if t.raw_get::<mlua::Value>(name)?.is_nil() {
+        t.raw_set(name, f)?;
+    }
+    Ok(())
+}
+
+/// The frame a started drag gesture is dragging (its `OnDragStart` fired), by script id.
+pub fn drag_source(lua: &Lua) -> Option<u32> {
+    let model = lua.app_data_ref::<Model>()?;
+    let d = model.drag.as_ref().filter(|d| d.started)?;
+    model.frame_to_id.get(&d.source).copied()
+}

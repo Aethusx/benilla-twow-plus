@@ -55,6 +55,10 @@ fn one(b: bool) -> Option<i64> {
 }
 
 pub(super) fn install(api: &Api) -> mlua::Result<()> {
+    // `player/LoginStatus.cpp`: logged in once the player's object exists.
+    let c = api.ca.clone();
+    api.global("IsLoggedIn", move |_, ()| Ok(c.lock().mirror.player != 0))?;
+
     // Rendering a mount: `UNIT_FIELD_MOUNTDISPLAYID` nonzero.
     let c = api.ca.clone();
     api.global("IsMounted", move |_, ()| {
