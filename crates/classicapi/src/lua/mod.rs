@@ -17,6 +17,7 @@ mod addons;
 mod args;
 mod aura;
 mod baselib;
+mod color;
 mod container;
 mod core;
 pub(crate) mod equipmentset;
@@ -27,6 +28,7 @@ pub(crate) mod lossofcontrol;
 pub(crate) mod luasyntax;
 pub(crate) mod misc;
 mod nameplate;
+mod playerinfo;
 pub(crate) mod spell;
 pub(crate) mod time;
 pub(crate) mod unit;
@@ -177,6 +179,8 @@ pub fn install(ca: &Ca, script: &mut UiScript) {
             action::install(&api)?;
             misc::install(&api)?;
             info::install(&api)?;
+            color::install(&api)?;
+            playerinfo::install(&api)?;
             unit::install(&api)?;
             Ok(api.private)
         })();
