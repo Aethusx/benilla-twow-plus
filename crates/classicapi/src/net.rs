@@ -18,7 +18,25 @@ pub fn register(app: &mut App) {
         .net_handler(K::SpellGo, on_spell_go)
         .net_handler(K::AttackerState, on_attacker_state)
         .net_handler(K::ChannelUpdate, on_channel_update)
-        .net_handler(K::ItemTemplate, on_item_template);
+        .net_handler(K::ItemTemplate, on_item_template)
+        .net_handler(K::TimeSpeed, on_clock)
+        .net_handler(K::ServerUnixTime, on_clock);
+}
+
+/// The clocks `C_DateAndTime` reads: the packed game date (`year·372 + month·31 + day`, both
+/// 0-based, the year since 2000) and the server's unix time.
+fn on_clock(In(ev): In<SessionEvent>, ca: Res<Ca>) {
+    let mut st = ca.lock();
+    match ev {
+        SessionEvent::TimeSpeed { day_serial, .. } => {
+            let s = i64::from(day_serial);
+            st.clocks.date = Some((s / 372, s % 372 / 31, s % 31));
+        }
+        SessionEvent::ServerUnixTime { unix_time } => {
+            st.clocks.server = Some((unix_time, std::time::Instant::now()));
+        }
+        _ => {}
+    }
 }
 
 /// `SMSG_ITEM_QUERY_SINGLE_RESPONSE`: the record `Item::PeekRecord` reads, or "no such item".

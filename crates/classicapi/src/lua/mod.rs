@@ -12,14 +12,19 @@ use mlua::{IntoLua, IntoLuaMulti, Lua, MultiValue, Table, Value};
 
 use crate::Ca;
 
+mod addons;
 mod args;
 mod aura;
+mod baselib;
 mod container;
 mod core;
 pub(crate) mod equipmentset;
+mod frame;
 pub(crate) mod item;
+pub(crate) mod luasyntax;
 mod nameplate;
 pub(crate) mod spell;
+pub(crate) mod time;
 pub(crate) mod unit;
 
 pub(crate) use args::*;
@@ -76,6 +81,22 @@ impl<'a> Api<'a> {
         ensure_table(self.lua, &mirror, ns)?.raw_set(name, func)
     }
 
+    /// A Lua function as it is, at `_G[name]` or `_G[ns][name]`, mirrored: for a function a Rust
+    /// wrapper would break, such as `coroutine.yield`, which cannot yield across a C call.
+    pub fn function(&self, ns: Option<&str>, name: &str, f: mlua::Function) -> mlua::Result<()> {
+        let mirror = self.namespace(MIRROR)?;
+        match ns {
+            None => {
+                self.g.raw_set(name, f.clone())?;
+                mirror.raw_set(name, f)
+            }
+            Some(ns) => {
+                self.namespace(ns)?.raw_set(name, f.clone())?;
+                ensure_table(self.lua, &mirror, ns)?.raw_set(name, f)
+            }
+        }
+    }
+
     /// `RegisterIntegerEnum`: `_G[parent][sub] = { key = value, ... }`, a fresh table.
     pub fn int_enum(&self, parent: &str, sub: &str, entries: &[(&str, i64)]) -> mlua::Result<()> {
         let t = self.lua.create_table()?;
@@ -113,17 +134,23 @@ pub fn install(ca: &Ca, script: &mut UiScript) {
     ca.tokens.lock().guid_literals = matches!(superwow, mlua::Value::Nil);
     script.set_unit_token_extension(ca.tokens.extension());
     script.lua().set_app_data(ca.items.clone());
+    addons::register(script);
     let bootstraps = {
         let lua = script.lua();
         let result = (|| -> mlua::Result<Table> {
             let api = Api::new(lua, ca)?;
             core::install(&api)?;
+            baselib::install(&api)?;
+            luasyntax::install(&api)?;
             spell::install(&api)?;
             nameplate::install(&api)?;
             aura::install(&api)?;
             item::install(&api)?;
             container::install(&api)?;
             equipmentset::install(&api)?;
+            time::install(&api)?;
+            addons::install(&api)?;
+            frame::install(&api)?;
             unit::install(&api)?;
             Ok(api.private)
         })();

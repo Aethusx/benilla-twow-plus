@@ -31,6 +31,7 @@ pub mod spellmod;
 pub mod spells;
 pub mod talents;
 pub mod tokens;
+pub mod transpile;
 
 /// The ClassicAPI release this port follows.
 pub const VERSION: (u32, u32, u32) = (1, 15, 16);
@@ -68,6 +69,8 @@ pub struct State {
     pub auras: aura::Source,
     /// `C_NewItems`' baseline and flags.
     pub(crate) new_items: lua::item::NewItems,
+    /// The server and realm clocks `C_DateAndTime` reads.
+    pub(crate) clocks: lua::time::Clocks,
     /// `C_EquipmentSet`'s sets, loaded per character.
     pub(crate) equipment_sets: lua::equipmentset::Store,
     /// When the player first resolved, and whether the carried templates were warmed
@@ -336,6 +339,7 @@ fn frame(
     for (name, args) in events {
         script.queue_event(name, args);
     }
+    lua::time::tick(script.lua());
     // The template loads: the asks benilla sends, and the events their answers fire.
     let (loaded, asks) = ca.items.lock().tick();
     for id in asks {

@@ -1,0 +1,63 @@
+## Interface: 11200
+## Title: !!!ClassicAPI
+## Notes: Library to emulate aspects of the modern WoW API on 1.12.1 / Lua 5.0.
+## Version: DEV
+## Author: Brues
+## X-Website: https://github.com/brues-code/ClassicAPI
+
+locales\locales.xml
+
+SecureTemplates.xml
+Compat.lua
+Util\Print.lua
+Util\Mixin.lua
+Util\Color.lua
+Util\Constants.lua
+Util\TableUtil.lua
+Util\MathUtil.lua
+Util\PixelUtil.lua
+Util\FrameUtil.lua
+Util\FormattingUtil.lua
+Util\TimeUtil.lua
+Util\CallbackRegistry.lua
+Util\GlobalCallbackRegistry.lua
+Util\ColorUtil.lua
+Util\ItemLocation.lua
+Util\PlayerLocation.lua
+Util\EventUtil.lua
+Util\ItemUtil.lua
+Util\AddOnCompat.lua
+Util\FunctionUtil.lua
+Util\CacheUtil.lua
+Util\Pools.lua
+Util\FrameWatcher.lua
+Util\TimedCallback.lua
+Util\EquipmentManager.lua
+Util\PlayerUtil.lua
+Util\SlashCommandsRegistry.lua
+Util\LinkUtil.lua
+Util\TradeSkillLink.lua
+Util\IconDataProvider.lua
+Util\GameTooltip.lua
+Util\Rectangle.lua
+Util\Vector2D.lua
+Util\Vector3D.lua
+Util\Vector4D.lua
+Util\UiMapPoint.lua
+Util\UIParent.lua
+Util\AuraDurationModifiers.lua
+Util\AuraUtil.lua
+Util\SecureUnitMenu.lua
+Util\TextureUtil.lua
+Util\MacroOptions.lua
+Util\SecureStateDriver.lua
+Util\MacroIconSelection.lua
+
+APIDocumentation\BaseAPIMixin.lua
+APIDocumentation\FieldsAPIMixin.lua
+APIDocumentation\FunctionsAPIMixin.lua
+APIDocumentation\SystemsAPIMixin.lua
+APIDocumentation\TablesAPIMixin.lua
+APIDocumentation\EventsAPIMixin.lua
+APIDocumentation\APIDocumentation.lua
+APIDocumentation\APIDocumentation_Bootstrap.lua
