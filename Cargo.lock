@@ -609,6 +609,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "benilla-mods"
+version = "0.2.0"
+dependencies = [
+ "benilla-app",
+ "benilla-buildstamp",
+ "nampower",
+ "unitxp",
+]
+
+[[package]]
 name = "benilla-mpq"
 version = "0.2.0"
 dependencies = [
@@ -6806,6 +6816,20 @@ name = "unicode-xid"
 version = "0.2.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ebc1c04c71510c7f702b52b7c350734c9ff1295c464a03335b00bb84fc54f853"
+
+[[package]]
+name = "unitxp"
+version = "0.2.0"
+dependencies = [
+ "benilla-app",
+ "benilla-buildstamp",
+ "benilla-protocol",
+ "benilla-world",
+ "bevy",
+ "mlua",
+ "raw-window-handle",
+ "windows-sys 0.59.0",
+]
 
 [[package]]
 name = "url"

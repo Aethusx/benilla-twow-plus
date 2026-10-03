@@ -1,0 +1,40 @@
+[package]
+name = "unitxp"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "UnitXP Service Pack 3 on top of benilla: the UnitXP(command, ...) Lua API, targeting, line of sight, camera, frame cap, weather and nameplate options, through benilla-app's `ext` seams"
+
+[lints]
+workspace = true
+
+[features]
+default = ["dev"]
+# The instruments; the player build is `--no-default-features`.
+dev = ["benilla-app/dev"]
+
+[dependencies]
+# `default-features = false`, or `--no-default-features` still builds benilla-app with `dev`.
+benilla-app = { path = "../benilla-app", default-features = false }
+benilla-protocol = { path = "../benilla-protocol" }
+benilla-world = { path = "../benilla-world", default-features = false }
+bevy.workspace = true
+mlua = { version = "0.11", features = ["lua51", "vendored"] }
+
+[target.'cfg(windows)'.dependencies]
+# The game window's HWND, out of Bevy's raw handle.
+raw-window-handle = "0.6"
+# The taskbar flash and the system sounds `UnitXP("notify", ...)` asks for.
+windows-sys = { version = "0.59", features = [
+    "Win32_Foundation",
+    "Win32_UI_WindowsAndMessaging",
+    "Win32_Media_Audio",
+] }
+
+[build-dependencies]
+benilla-buildstamp = { path = "../benilla-buildstamp" }
+
+[[bin]]
+name = "benilla-unitxp"
+path = "src/main.rs"
+test = false

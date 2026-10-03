@@ -1,0 +1,27 @@
+[package]
+name = "benilla-mods"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "The launcher with every crate on top of benilla loaded: nampower and UnitXP SP3"
+
+[lints]
+workspace = true
+
+[features]
+default = ["dev"]
+# The instruments; the player build is `--no-default-features`.
+dev = ["benilla-app/dev", "nampower/dev", "unitxp/dev"]
+
+[dependencies]
+benilla-app = { path = "../benilla-app", default-features = false }
+nampower = { path = "../nampower", default-features = false }
+unitxp = { path = "../unitxp", default-features = false }
+
+[build-dependencies]
+benilla-buildstamp = { path = "../benilla-buildstamp" }
+
+[[bin]]
+name = "benilla-mods"
+path = "src/main.rs"
+test = false

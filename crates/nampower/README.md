@@ -77,6 +77,8 @@ CVars go in `settings::CVARS` and `Settings::apply`, and new events go in `event
 
 - **Settings** are `NP_` CVars that the bootstrap declares with `RegisterCVar`, the way an addon
   declares its own. They persist in `benilla-config/config.toml`.
+- **`NP_NameplateDistance`** sets benilla's nameplate range through `ext::NameplateHook`; its
+  default is the reference's 20 yd, where the DLL reads the game's current value.
 - **Events** fire only once some frame registers them, which is how nampower 4.5+ enables its
   gated events. The `NP_Enable*Events` toggles are still accepted.
 - **Files**: `CustomData/` and `Imports/` live in `benilla-config/`, not beside `WoW.exe`.
@@ -87,7 +89,7 @@ CVars go in `settings::CVARS` and `Settings::apply`, and new events go in `event
   quickcast at the mouse (`NP_QuickcastTargetingSpells`, `NP_QuickcastOnDoubleCast`).
 - **`LearnTalentRank`** learns one rank per call, through the stock `LearnTalent`.
 - **Not ported**: patches to fixed `WoW.exe` addresses with no benilla counterpart. That covers
-  the chat-bubble patch, nameplate and chat-bubble distances, right-click target guards, greater
+  the chat-bubble patch and its distance, right-click target guards, greater
   demon autocast memory, enhanced tooltips, `SetMouseoverUnit`, the extended unit tokens inside
   the *stock* unit functions (`GetUnitGUID` and every nampower function do accept them), the
   `NP_EnableUnitEvents{Pet,Party,Raid,Mouseover}` toggles, and the glue-only

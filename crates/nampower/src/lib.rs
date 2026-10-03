@@ -14,8 +14,8 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Instant;
 
 use benilla_app::ext::{
-    CastGateHook, ExtCancelAura, ExtCast, ExtCastSet, ExtRaidMark, ExtView, ScriptInstallers,
-    ScriptValue, UiScript,
+    CastGateHook, ExtCancelAura, ExtCast, ExtCastSet, ExtRaidMark, ExtView, NameplateHook,
+    ScriptInstallers, ScriptValue, UiScript,
 };
 use bevy::prelude::*;
 
@@ -155,6 +155,7 @@ fn frame(
     mut casts: MessageWriter<ExtCast>,
     mut marks: MessageWriter<ExtRaidMark>,
     mut cancels: MessageWriter<ExtCancelAura>,
+    mut plates: ResMut<NameplateHook>,
     script: Option<NonSendMut<UiScript>>,
 ) {
     let now = Instant::now();
@@ -202,6 +203,12 @@ fn frame(
         }
         let changes = st.mirror.refresh(&view, now);
         events::unit_diffs(&mut st, &np.db, &changes);
+        // `NP_NameplateDistance`: the reference's 20 yd leaves benilla's own range alone.
+        let range = st.engine.settings.nameplate_distance;
+        let wanted = (range != 20.0).then_some(range);
+        if plates.max_distance != wanted {
+            plates.max_distance = wanted;
+        }
         st.engine.tick(ms);
         let engine_out = std::mem::take(&mut st.engine.out);
         st.outbox.extend(engine_out);

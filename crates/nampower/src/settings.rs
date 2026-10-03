@@ -49,7 +49,7 @@ pub const CVARS: &[(&str, &str)] = &[
     ("NP_TargetingQueueWindowMs", "500"),
     ("NP_CooldownQueueWindowMs", "250"),
     ("NP_ChannelLatencyReductionPercentage", "75"),
-    ("NP_NameplateDistance", "41"),
+    ("NP_NameplateDistance", "20"),
     ("NP_ChatBubbleDistance", "60"),
     ("NP_ChatBubblesWhisper", "0"),
     ("NP_ChatBubblesRaid", "0"),
@@ -101,6 +101,8 @@ pub struct Settings {
     pub non_gcd_buffer_time_ms: u64,
     pub channel_latency_reduction_percentage: i64,
     pub chat_bubble_distance: u32,
+    /// The nameplate range in yards; 20 is the reference's own.
+    pub nameplate_distance: f32,
 }
 
 /// `atoi`: the leading integer, 0 for none, as nampower reads every value.
@@ -183,6 +185,11 @@ impl Settings {
                 self.channel_latency_reduction_percentage = atoi(value)
             }
             "np_chatbubbledistance" => self.chat_bubble_distance = ms as u32,
+            "np_nameplatedistance" => {
+                if let Ok(d) = value.trim().parse::<f32>() {
+                    self.nameplate_distance = d.clamp(0.0, 200.0);
+                }
+            }
             _ => return key.starts_with("np_"),
         }
         true
