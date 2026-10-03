@@ -21,6 +21,7 @@ mod container;
 mod core;
 pub(crate) mod equipmentset;
 mod frame;
+mod info;
 pub(crate) mod item;
 pub(crate) mod lossofcontrol;
 pub(crate) mod luasyntax;
@@ -175,6 +176,7 @@ pub fn install(ca: &Ca, script: &mut UiScript) {
             lossofcontrol::install(&api)?;
             action::install(&api)?;
             misc::install(&api)?;
+            info::install(&api)?;
             unit::install(&api)?;
             Ok(api.private)
         })();
