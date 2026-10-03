@@ -13,8 +13,8 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Instant;
 
 use benilla_app::ext::{
-    CastOutcome, ExtCancelAura, ExtCast, ExtCastNote, ExtCastSet, ExtRange, ExtUnitTokens,
-    ExtUsable, ExtView, ExtWorld, ScriptInstallers, ScriptValue, UiScript,
+    CastOutcome, ExtAttack, ExtCancelAura, ExtCast, ExtCastNote, ExtCastSet, ExtRange,
+    ExtUnitTokens, ExtUsable, ExtView, ExtWorld, ScriptInstallers, ScriptValue, UiScript,
 };
 use bevy::prelude::*;
 
@@ -57,6 +57,10 @@ pub struct State {
     cancels: Vec<u32>,
     /// Casts the natives queued, sent through benilla's ladder next frame.
     pub(crate) casts: Vec<ExtCast>,
+    /// Melee starts and stops the natives queued.
+    pub(crate) attacks: Vec<ExtAttack>,
+    /// The six modifier keys held, `Input::Modifier`'s mask.
+    pub(crate) modifiers: u8,
     /// The nameplate diff: last frame's `(guid, frame)` pairs and every frame ever announced.
     plates_last: Vec<(u64, u32)>,
     plates_seen: std::collections::HashSet<u32>,
@@ -220,6 +224,8 @@ fn frame(
     inputs: Inputs,
     mut cancels: MessageWriter<ExtCancelAura>,
     mut casts: MessageWriter<ExtCast>,
+    mut attacks: MessageWriter<ExtAttack>,
+    keys: Option<Res<bevy::input::ButtonInput<bevy::input::keyboard::KeyCode>>>,
     mut ext_tokens: ResMut<ExtUnitTokens>,
     mut notes: MessageReader<ExtCastNote>,
     script: Option<NonSendMut<UiScript>>,
@@ -299,13 +305,26 @@ fn frame(
         cast.take_fires()
     });
     lap.mark("cast");
-    let (events, cancel, queued, focus_lost) = {
+    let mask = keys.as_deref().map_or(0, lua::misc::modifier_mask);
+    let (events, cancel, queued, attack, focus_lost) = {
         let mut st = ca.lock();
         st.mirror.map_id = map.as_deref().map_or(0, |m| m.0);
         st.mirror.indoors = (st.mirror.player != 0).then(|| point.interior().is_some());
         st.mirror
             .refresh_sight(|a, b| collision.sight(a, b).is_some(), now);
         let focus_lost = upkeep_tokens(&ca.tokens, &st.mirror, &view);
+        // `MODIFIER_STATE_CHANGED(key, down)` for each modifier that moved.
+        let moved = st.modifiers ^ mask;
+        for (i, key) in lua::misc::MODIFIER_KEYS.iter().enumerate() {
+            if moved & (1 << i) != 0 {
+                let down = i64::from(mask >> i & 1);
+                st.emit(
+                    "MODIFIER_STATE_CHANGED",
+                    vec![ScriptValue::Str((*key).to_string()), ScriptValue::Int(down)],
+                );
+            }
+        }
+        st.modifiers = mask;
         // `UPDATE_SHAPESHIFT_FORM`, argless, when the form byte (`UNIT_FIELD_BYTES_1` byte 2)
         // moves; an unresolved player is no change.
         if let Some(form) = st
@@ -358,6 +377,7 @@ fn frame(
             std::mem::take(&mut st.events),
             std::mem::take(&mut st.cancels),
             std::mem::take(&mut st.casts),
+            std::mem::take(&mut st.attacks),
             focus_lost,
         )
     };
@@ -366,6 +386,7 @@ fn frame(
         cancels.write(ExtCancelAura { spell_id });
     }
     casts.write_batch(queued);
+    attacks.write_batch(attack);
     let Some(mut script) = script else {
         return;
     };

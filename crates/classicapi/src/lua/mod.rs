@@ -24,6 +24,7 @@ mod frame;
 pub(crate) mod item;
 pub(crate) mod lossofcontrol;
 pub(crate) mod luasyntax;
+pub(crate) mod misc;
 mod nameplate;
 pub(crate) mod spell;
 pub(crate) mod time;
@@ -173,6 +174,7 @@ pub fn install(ca: &Ca, script: &mut UiScript) {
             frame::install(&api)?;
             lossofcontrol::install(&api)?;
             action::install(&api)?;
+            misc::install(&api)?;
             unit::install(&api)?;
             Ok(api.private)
         })();

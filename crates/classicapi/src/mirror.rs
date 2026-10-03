@@ -283,6 +283,8 @@ pub struct Mirror {
     /// The spell whose targeting cursor is up.
     pub targeting: u32,
     pub in_group: bool,
+    /// A raid roster stands (`VAR_RAID_MEMBER_COUNT > 0`).
+    pub in_raid: bool,
     /// The party and raid rosters' guids, which outlive their units' objects.
     pub group: Vec<u64>,
     /// The client's raid-target table, slots 1-8 at 0-7.
@@ -326,13 +328,16 @@ impl Mirror {
         }
         self.in_group = view.in_group();
         self.group.clear();
+        self.in_raid = false;
         if self.in_group {
             for i in 1..=4 {
                 self.group.extend(view.unit_guid(&format!("party{i}")));
             }
+            let party = self.group.len();
             for i in 1..=40 {
                 self.group.extend(view.unit_guid(&format!("raid{i}")));
             }
+            self.in_raid = self.group.len() > party;
         }
         let mut changes = Vec::new();
         for (guid, fields) in view.changed_objects() {

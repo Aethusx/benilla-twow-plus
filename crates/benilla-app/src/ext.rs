@@ -147,6 +147,12 @@ pub enum ExtPlace {
     KeepGround,
 }
 
+/// Start melee at `Some(guid)`, the selection for `Some(0)` (`FUN_ATTACK_RESOLVE_TARGET`), or stop it
+/// for `None`: the client's StartAttack (`0x5ecb70`) and StopAttack (`0x5ecac0`), whose callers own
+/// the attackability check; this one leaves it to the server, as a direct engine call does.
+#[derive(Message, Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ExtAttack(pub Option<u64>);
+
 /// Set raid mark `icon` (0-7, star to skull) on `guid` (0 clears it) in the client's own table,
 /// with no packet: what `MSG_RAID_TARGET_UPDATE` would have written.
 #[derive(Message, Clone, Copy, Debug)]
@@ -275,6 +281,36 @@ fn apply_ext_cancel_auras(
     }
 }
 
+fn apply_ext_attacks(
+    mut asks: MessageReader<ExtAttack>,
+    selection: Res<crate::target::Selection>,
+    engaged: Query<
+        (),
+        (
+            With<crate::net::SelfPlayer>,
+            With<crate::creature_anim::Engaged>,
+        ),
+    >,
+    mut seam: crate::creature_anim::AttackSeam,
+) {
+    for ask in asks.read() {
+        let engaged = !engaged.is_empty();
+        match ask.0 {
+            None => seam.stop(engaged),
+            Some(guid) => {
+                let target = if guid != 0 {
+                    Some(guid)
+                } else {
+                    selection.guid
+                };
+                if let Some(target) = target {
+                    seam.start(target, engaged, false);
+                }
+            }
+        }
+    }
+}
+
 fn apply_ext_selects(
     mut selects: MessageReader<ExtSelect>,
     mut commit: crate::target::SelectCommit,
@@ -341,6 +377,7 @@ impl Plugin for ExtPlugin {
         app.init_resource::<ScriptInstallers>()
             .init_resource::<CastGateHook>()
             .add_message::<ExtCast>()
+            .add_message::<ExtAttack>()
             .add_message::<ExtRaidMark>()
             .add_message::<ExtCancelAura>()
             .add_message::<ExtSelect>()
@@ -356,6 +393,7 @@ impl Plugin for ExtPlugin {
                     .before(apply_ext_raid_marks)
                     .before(apply_ext_cancel_auras)
                     .before(apply_ext_selects)
+                    .before(apply_ext_attacks)
                     .before(apply_ext_combat_text),
             )
             // `apply_ext_casts` runs in the target chain, ahead of the frame's script calls: a
@@ -366,6 +404,7 @@ impl Plugin for ExtPlugin {
                     apply_ext_raid_marks,
                     apply_ext_cancel_auras,
                     apply_ext_selects.in_set(crate::target::TargetUpdate),
+                    apply_ext_attacks.after(apply_ext_selects),
                     apply_ext_combat_text.before(crate::ui_pass::UiQuadAppend),
                 ),
             );

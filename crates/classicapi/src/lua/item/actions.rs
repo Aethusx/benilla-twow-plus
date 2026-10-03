@@ -196,6 +196,53 @@ pub(super) fn install(api: &Api) -> mlua::Result<()> {
         v2.pickup(&found)
     })?;
 
+    // `Item::UseAtCursor` and `Item::UseAtUnit`: the use sent through benilla's ladder with its
+    // on-use spell, a ground one placed at the cursor or the unit's feet. An item without an on-use
+    // spell is used plainly and reports false. Deviation: the answer is decided at the call (an
+    // on-use spell wanting a ground point), as `C_Spell.CastAtCursor`'s is.
+    let (c, v2) = (api.ca.clone(), verbs.clone());
+    api.table("C_Item", "UseAtCursor", move |lua, item: Value| {
+        let Some(found) = find(lua, &c, &item) else {
+            return Ok(false);
+        };
+        use_placed(
+            lua,
+            &c,
+            &v2,
+            &found,
+            None,
+            benilla_app::ext::ExtPlace::Cursor,
+        )
+    })?;
+    let (c, v2) = (api.ca.clone(), verbs.clone());
+    api.table(
+        "C_Item",
+        "UseAtUnit",
+        move |lua, (item, unit): (Value, Value)| {
+            let Value::String(token) = &unit else {
+                return Ok(false);
+            };
+            let token = token.to_str()?.to_string();
+            let Some(guid) = crate::lua::unit::unit_guid(lua, &token)? else {
+                return Ok(false);
+            };
+            let Some(pos) = c.lock().mirror.place(guid).map(|p| p.pos) else {
+                return Ok(false);
+            };
+            let Some(found) = find(lua, &c, &item) else {
+                return Ok(false);
+            };
+            use_placed(
+                lua,
+                &c,
+                &v2,
+                &found,
+                Some(guid),
+                benilla_app::ext::ExtPlace::At(pos),
+            )
+        },
+    )?;
+
     // `UseItemByName(item [, unit])`.
     let (c, v2) = (api.ca.clone(), verbs);
     api.table(
@@ -215,4 +262,53 @@ pub(super) fn install(api: &Api) -> mlua::Result<()> {
         },
     )?;
     Ok(())
+}
+
+/// The item's wire position: equipment and the backpack in the player array (255), slots 0-18
+/// and 23-38; bags 1-4 at 19-22.
+fn wire_position(f: &Found) -> Option<(u8, u8)> {
+    match (f.equipment, f.bag, f.slot) {
+        (e @ 1..=19, _, _) => Some((255, (e - 1) as u8)),
+        (0, 0, s @ 1..=16) => Some((255, (23 + s - 1) as u8)),
+        (0, b @ 1..=4, s @ 1..=36) => Some(((19 + b - 1) as u8, (s - 1) as u8)),
+        _ => None,
+    }
+}
+
+/// Send `f`'s use with its on-use spell and `place`, at `target`; with no on-use spell, the plain
+/// use. Whether the spell wants a ground point.
+fn use_placed(
+    lua: &Lua,
+    ca: &Ca,
+    verbs: &Verbs,
+    f: &Found,
+    target: Option<u64>,
+    place: benilla_app::ext::ExtPlace,
+) -> mlua::Result<bool> {
+    let record = super::record(lua, i64::from(f.item.entry));
+    let spell = record
+        .as_deref()
+        .and_then(|r| Some((r.use_spell?.spell_id, r.use_spell_index()?)));
+    let (Some((spell_id, spell_index)), Some((bag_index, slot))) = (spell, wire_position(f)) else {
+        verbs.use_item(f, None)?;
+        return Ok(false);
+    };
+    let ground = crate::spells::table(&ca.db)
+        .and_then(|t| {
+            t.row(spell_id)
+                .map(|r| r.u32(crate::spells::col::TARGETS) & 0x60 != 0)
+        })
+        .unwrap_or(false);
+    ca.lock().casts.push(benilla_app::ext::ExtCast {
+        spell_id,
+        target,
+        item: Some(benilla_app::ext::ItemUse {
+            bag_index,
+            slot,
+            entry: f.item.entry,
+            spell_index,
+        }),
+        place: Some(place),
+    });
+    Ok(ground)
 }
