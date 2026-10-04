@@ -651,6 +651,25 @@ impl ExtWorld<'_, '_> {
         )
     }
 
+    /// The nearest-unit scan's per-candidate filter (`0x493e40`): `hostile`, mode 1, alive and
+    /// attackable; else mode 2, assistable and not dead. A crate's own target cycles use it.
+    pub fn tab_valid(&self, guid: u64, hostile: bool) -> bool {
+        let store = self.store(guid);
+        let me = self.me.single().ok();
+        if hostile {
+            !store.is_some_and(|s| s.0.unit_reads_dead())
+                && crate::target::can_attack(store, self.factions.as_deref(), &self.reputations, me)
+        } else {
+            crate::target::can_assist(
+                store,
+                self.factions.as_deref(),
+                &self.reputations,
+                me,
+                |owner| self.store(owner).cloned(),
+            ) && !store.is_some_and(|s| s.0.unit_is_dead())
+        }
+    }
+
     /// A creature's `CreatureType.dbc` id and its rank (3 is a world boss), once its template has
     /// been queried; `None` for a player or an unknown template.
     pub fn creature(&self, guid: u64) -> Option<(u32, u32)> {
