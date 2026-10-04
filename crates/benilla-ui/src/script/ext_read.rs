@@ -344,3 +344,48 @@ pub fn replace_tooltip_method(
     t.raw_set(name, f)?;
     Ok(old)
 }
+
+/// Make the macro runner treat `#` lines as comments, as 3.3.5's does, where 1.12's sends them on
+/// (a `#showtooltip` line becomes a `/say`).
+pub fn set_macro_skip_comments(lua: &Lua, on: bool) {
+    if let Some(mut model) = lua.app_data_mut::<Model>() {
+        model.macro_skip_comments = on;
+    }
+}
+
+/// `StopMacro`: the running macro body dispatches no further line.
+pub fn request_macro_stop(lua: &Lua) {
+    if let Some(mut model) = lua.app_data_mut::<Model>() {
+        model.macro_stop = true;
+    }
+}
+
+/// `CreateMacro` with the icon as a texture path; the new 1-based index.
+pub fn create_macro(
+    lua: &Lua,
+    name: &str,
+    texture: Option<String>,
+    body: &str,
+    per_character: bool,
+) -> Option<usize> {
+    let mut model = lua.app_data_mut::<Model>()?;
+    super::macros::create_macro(&mut model, name, texture, body, false, per_character)
+}
+
+/// `EditMacro` with the icon as a texture path; `None` fields are left alone, as is the local flag.
+pub fn edit_macro(
+    lua: &Lua,
+    index: usize,
+    name: Option<String>,
+    texture: Option<String>,
+    body: Option<String>,
+) -> Option<usize> {
+    let mut model = lua.app_data_mut::<Model>()?;
+    super::macros::edit_macro(&mut model, index, name, texture.map(Some), body, None)
+}
+
+/// A macro's 1-based index by name, 0 for none (`GetMacroIndexByName`).
+pub fn macro_index_by_name(lua: &Lua, name: &str) -> usize {
+    lua.app_data_ref::<Model>()
+        .map_or(0, |m| m.macros.index_by_name(name))
+}

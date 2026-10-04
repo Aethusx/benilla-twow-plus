@@ -283,3 +283,55 @@ fn every_macro_chooser_icon_resolves_in_the_client_archives() {
         "the chooser list must be case-insensitively sorted"
     );
 }
+
+/// A crate's runner switches: `#` lines skipped, and a stop requested from a line ends the body
+/// after it, while the outer run's flag survives.
+#[test]
+fn a_crate_can_skip_comment_lines_and_stop_a_body() {
+    let mut s = UiScript::new().unwrap();
+    s.run(
+        r#"MacroSpy = CreateFrame("Frame")
+           MacroSpy.seen = {}
+           MacroSpy:RegisterEvent("EXECUTE_CHAT_LINE")
+           MacroSpy:SetScript("OnEvent", function()
+               table.insert(MacroSpy.seen, arg1)
+               if arg1 == "/stopmacro" then Stop() end
+           end)"#,
+    )
+    .unwrap();
+    let stop = s
+        .lua()
+        .create_function(|lua, ()| {
+            benilla_ui::script::ext_read::request_macro_stop(lua);
+            Ok(())
+        })
+        .unwrap();
+    s.lua().globals().set("Stop", stop).unwrap();
+    s.set_macros(MacroState {
+        account: vec![macro_view(
+            "M",
+            "#showtooltip Fireball\n/wave\n/stopmacro\n/say never",
+        )],
+        character: Vec::new(),
+    });
+
+    // Stock: every line goes, the directive included.
+    assert!(super::run_macro(&mut s, 1));
+    assert_eq!(
+        s.eval::<i64>("return table.getn(MacroSpy.seen)").unwrap(),
+        3
+    );
+
+    s.run("MacroSpy.seen = {}").unwrap();
+    benilla_ui::script::ext_read::set_macro_skip_comments(s.lua(), true);
+    assert!(super::run_macro(&mut s, 1));
+    assert_eq!(
+        s.eval::<(String, String, i64)>(
+            "return MacroSpy.seen[1], MacroSpy.seen[2], table.getn(MacroSpy.seen)"
+        )
+        .unwrap(),
+        ("/wave".into(), "/stopmacro".into(), 2)
+    );
+    // The flag is not left armed for the next run.
+    assert!(!s.swap_macro_stop(false));
+}

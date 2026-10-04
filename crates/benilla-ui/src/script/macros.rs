@@ -150,6 +150,17 @@ impl super::UiScript {
         self.model_mut().macro_bindings = bindings;
     }
 
+    /// A crate's switch: the runner skips `#` lines (see [`super::ext_read::set_macro_skip_comments`]).
+    pub fn macro_skip_comments(&self) -> bool {
+        self.model_mut().macro_skip_comments
+    }
+
+    /// The runner's stop flag, swapped for `value`: the runner clears it before a body, reads it
+    /// after each line, and restores the outer body's after (a nested run stops only itself).
+    pub fn swap_macro_stop(&mut self, value: bool) -> bool {
+        std::mem::replace(&mut self.model_mut().macro_stop, value)
+    }
+
     /// Whether a script changed the table since the last call; the app then saves it and fires
     /// `UPDATE_MACROS` (`0x452460`).
     pub fn take_macros_dirty(&mut self) -> bool {
@@ -172,7 +183,7 @@ impl super::UiScript {
 /// `CreateMacro(name, iconIndex, body, local, perCharacter)` (usage string `0x44cb74`): the new
 /// 1-based index, or `None` on the two failures the client logs (`0x44cbb4`, `0x44cbdc`), an empty
 /// name and a full tab.
-fn create_macro(
+pub(super) fn create_macro(
     model: &mut Model,
     name: &str,
     texture: Option<String>,
@@ -207,7 +218,7 @@ fn create_macro(
 /// `EditMacro(index, name, icon, body, local)`: an omitted argument leaves its field alone, since
 /// the stock UI calls it with disjoint halves, `(sel, name, icon)` from the rename popup and
 /// `(sel, nil, nil, text)` from `MacroFrame_SaveMacro`.
-fn edit_macro(
+pub(super) fn edit_macro(
     model: &mut Model,
     index: usize,
     name: Option<String>,

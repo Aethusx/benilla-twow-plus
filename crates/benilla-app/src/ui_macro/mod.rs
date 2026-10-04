@@ -237,13 +237,25 @@ pub(crate) fn run_macro(script: &mut UiScript, index: u32) -> bool {
     let Some(body) = script.macros().get(index as usize).map(|m| m.body.clone()) else {
         return false;
     };
-    let lines: Vec<String> = run::macro_lines(&body).map(str::to_string).collect();
+    // A crate may make `#` lines comments (3.3.5's runner) where 1.12 sends them on.
+    let skip_comments = script.macro_skip_comments();
+    let lines: Vec<String> = run::macro_lines(&body)
+        .filter(|l| !(skip_comments && l.starts_with('#')))
+        .map(str::to_string)
+        .collect();
     if lines.is_empty() {
         return false;
     }
     debug!("ui_macro: running macro {index} ({} line(s))", lines.len());
+    // A crate's `StopMacro` ends this body after the line that asked; a nested run (a line that
+    // runs another macro) stops only itself, so the outer body's flag is put back.
+    let outer = script.swap_macro_stop(false);
     for line in lines {
         script.fire_event(EXECUTE_CHAT_LINE, vec![ScriptValue::Str(line)]);
+        if script.swap_macro_stop(false) {
+            break;
+        }
     }
+    script.swap_macro_stop(outer);
     true
 }
