@@ -64,6 +64,8 @@ pub struct State {
     pub(crate) modifiers: u8,
     /// The creature, gameobject and quest records and their loads (`Cache::QueryLoad`).
     pub templates: templates::Templates,
+    /// `C_FriendList`'s notes and `/who` queries.
+    pub(crate) friends: lua::friends::Friends,
     /// The reputation diff behind `FACTION_STANDING_CHANGED` (`Faction::StandingChanged`).
     pub(crate) faction_watch: lua::faction::Watch,
     /// The nearest and directional target asks (`Target::Nearest`).
@@ -472,6 +474,7 @@ fn frame(
     }
     lua::showtooltip::tick(script.lua(), &ca, &mut macro_display, now);
     lua::cvar::tick(script.lua(), &ca);
+    lua::friends::tick(script.lua(), &ca, now);
     let faction_events = {
         let mut watch = std::mem::take(&mut ca.lock().faction_watch);
         let events = watch.tick(script.lua());

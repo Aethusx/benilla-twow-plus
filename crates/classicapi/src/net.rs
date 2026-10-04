@@ -29,7 +29,13 @@ pub fn register(app: &mut App) {
         .net_handler(K::CastResult, on_cast)
         .net_handler(K::CreatureName, on_template)
         .net_handler(K::GameObjectInfo, on_template)
-        .net_handler(K::QuestTemplate, on_template);
+        .net_handler(K::QuestTemplate, on_template)
+        .net_handler(K::WhoResults, on_who);
+}
+
+/// `SMSG_WHO`: an answer, which may be one of `C_FriendList.SendWhoQueryByName`'s.
+fn on_who(In(_): In<SessionEvent>, ca: Res<Ca>) {
+    ca.lock().friends.on_who_answer();
 }
 
 /// The template answers, for `Cache::QueryLoad`'s records and loads.

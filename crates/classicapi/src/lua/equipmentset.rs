@@ -62,6 +62,12 @@ fn file_token(s: &str) -> String {
 
 /// `Storage::ResolveFilePath`: none before the realm and character are known.
 fn file_path(lua: &Lua) -> Option<PathBuf> {
+    character_file(lua, "ClassicAPI_EquipmentSets.txt")
+}
+
+/// A per-character file under `benilla-config/saved/<Realm>-<Character>/`, where the DLL keeps
+/// its files under the character's `WTF` folder; none before the realm and character are known.
+pub(crate) fn character_file(lua: &Lua, file: &str) -> Option<PathBuf> {
     let g = lua.globals();
     let realm: String = g
         .get::<mlua::Function>("GetRealmName")
@@ -81,7 +87,7 @@ fn file_path(lua: &Lua) -> Option<PathBuf> {
         benilla_app::ext::local_state_dir()?
             .join("saved")
             .join(key)
-            .join("ClassicAPI_EquipmentSets.txt"),
+            .join(file),
     )
 }
 

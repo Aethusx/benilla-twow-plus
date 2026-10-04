@@ -26,6 +26,7 @@ mod encoding;
 pub(crate) mod equipmentset;
 pub(crate) mod faction;
 mod frame;
+pub(crate) mod friends;
 mod gossip;
 mod info;
 pub(crate) mod item;
@@ -201,6 +202,7 @@ pub fn install(ca: &Ca, script: &mut UiScript) {
             targeting::install(&api)?;
             gossip::install(&api)?;
             faction::install(&api)?;
+            friends::install(&api)?;
             unit::install(&api)?;
             Ok(api.private)
         })();
