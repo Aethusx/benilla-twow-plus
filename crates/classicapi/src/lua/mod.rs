@@ -37,6 +37,7 @@ mod playerinfo;
 pub(crate) mod showtooltip;
 pub(crate) mod spell;
 pub(crate) mod time;
+pub(crate) mod totem;
 pub(crate) mod unit;
 
 pub(crate) use args::*;
@@ -193,6 +194,7 @@ pub fn install(ca: &Ca, script: &mut UiScript) {
             itemscrape::install(&api)?;
             encoding::install(&api)?;
             cvar::install(&api)?;
+            totem::install(&api)?;
             unit::install(&api)?;
             Ok(api.private)
         })();

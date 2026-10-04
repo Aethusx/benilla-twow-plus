@@ -64,6 +64,8 @@ pub struct State {
     pub(crate) modifiers: u8,
     /// The creature, gameobject and quest records and their loads (`Cache::QueryLoad`).
     pub templates: templates::Templates,
+    /// The totem bar (`Totem::Tracker`).
+    pub(crate) totems: lua::totem::Totems,
     /// `C_CVar`'s temporary values (`CVar::Temp`).
     pub(crate) temp_cvars: Vec<lua::cvar::Temp>,
     /// `#showtooltip` / `#show` macros (`Macro::ShowTooltip`).
@@ -162,17 +164,25 @@ impl Ca {
 
     /// The cast tracker with the same environment the aura cache reads.
     pub fn with_cast<R>(&self, f: impl FnOnce(&mut cast::Tracker, &aura::Env) -> R) -> R {
-        self.with_auras_and(|_, cast, env| f(cast, env))
+        self.with_auras_and(|_, cast, _, env| f(cast, env))
+    }
+
+    /// The totem tracker with the aura cache's environment.
+    pub(crate) fn with_totems<R>(
+        &self,
+        f: impl FnOnce(&mut lua::totem::Totems, &aura::Env) -> R,
+    ) -> R {
+        self.with_auras_and(|_, _, totems, env| f(totems, env))
     }
 
     /// The aura cache and what it reads, under the lock.
     pub fn with_auras<R>(&self, f: impl FnOnce(&mut aura::Source, &aura::Env) -> R) -> R {
-        self.with_auras_and(|auras, _, env| f(auras, env))
+        self.with_auras_and(|auras, _, _, env| f(auras, env))
     }
 
     fn with_auras_and<R>(
         &self,
-        f: impl FnOnce(&mut aura::Source, &mut cast::Tracker, &aura::Env) -> R,
+        f: impl FnOnce(&mut aura::Source, &mut cast::Tracker, &mut lua::totem::Totems, &aura::Env) -> R,
     ) -> R {
         let spells = spells::table(&self.db);
         let durations = self.db.get("SpellDuration");
@@ -181,6 +191,7 @@ impl Ca {
         let State {
             auras,
             cast,
+            totems,
             mirror,
             mods,
             known,
@@ -194,7 +205,7 @@ impl Ca {
             family,
             known,
         };
-        f(auras, cast, &env)
+        f(auras, cast, totems, &env)
     }
 }
 
@@ -232,6 +243,7 @@ fn frame(
     mut cancels: MessageWriter<ExtCancelAura>,
     mut casts: MessageWriter<ExtCast>,
     mut attacks: MessageWriter<ExtAttack>,
+    mut selects: MessageWriter<benilla_app::ext::ExtSelect>,
     mut queries: MessageWriter<ExtQuery>,
     mut macro_display: ResMut<benilla_app::ext::ExtMacroDisplay>,
     keys: Option<Res<bevy::input::ButtonInput<bevy::input::keyboard::KeyCode>>>,
@@ -313,6 +325,8 @@ fn frame(
         cast.tick(env, now);
         cast.take_fires()
     });
+    let (totem_updates, totem_select) =
+        ca.with_totems(|t, env| (t.tick(env, now), t.select.take()));
     lap.mark("cast");
     let mask = keys.as_deref().map_or(0, lua::misc::modifier_mask);
     let (events, cancel, queued, attack, loads, focus_lost) = {
@@ -397,6 +411,9 @@ fn frame(
     }
     casts.write_batch(queued);
     attacks.write_batch(attack);
+    if let Some(guid) = totem_select {
+        selects.write(benilla_app::ext::ExtSelect { guid });
+    }
     let (asks, load_results) = loads;
     queries.write_batch(asks);
     let Some(mut script) = script else {
@@ -444,6 +461,12 @@ fn frame(
     }
     lua::showtooltip::tick(script.lua(), &ca, &mut macro_display, now);
     lua::cvar::tick(script.lua(), &ca);
+    for slot in totem_updates {
+        script.queue_event(
+            "PLAYER_TOTEM_UPDATE",
+            vec![ScriptValue::Number(slot as f64 + 1.0)],
+        );
+    }
     for (name, id, ok) in load_results {
         script.queue_event(
             name,

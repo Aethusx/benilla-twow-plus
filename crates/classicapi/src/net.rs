@@ -160,6 +160,11 @@ fn on_spell_go(In(ev): In<SessionEvent>, ca: Res<Ca>) {
     ca.with_auras(|auras, env| auras.on_spell_go(env, caster, spell_id, &hits));
     let now = crate::cast::now_ms();
     ca.with_cast(|cast, env| cast.on_spell_go(env, caster, spell_id, now));
+    ca.with_totems(|totems, env| {
+        if caster == env.mirror.player {
+            totems.on_player_spell_go(env, spell_id, std::time::Instant::now());
+        }
+    });
 }
 
 /// `Aura::JudgementRefresh`: a white swing that dealt damage refreshes the attacker's judgements
