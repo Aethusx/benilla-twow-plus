@@ -263,6 +263,51 @@ pub struct ExtSoundPlay {
     pub volume: Option<f32>,
 }
 
+/// A crate's loot verbs, the client's own senders with no walk-to: `CMSG_LOOT` at a unit (arming
+/// the loot latch, as `0x5df2a0` does at its send), a take by wire slot (`CMSG_AUTOSTORE_LOOT_ITEM`
+/// with no bind confirm), the coin, and the release.
+#[derive(Message, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ExtLootSend {
+    /// `quiet`: the answer goes to [`ExtLoot::window`] alone; the loot frame never opens.
+    Open {
+        guid: u64,
+        quiet: bool,
+    },
+    Item(u8),
+    Money,
+    Release(u64),
+}
+
+/// The last loot window the server sent, for a crate, and the quiet session it asked for.
+#[derive(Resource, Default, Debug, Clone, PartialEq)]
+pub struct ExtLoot {
+    /// The guid whose answer the loot frame does not show; cleared at its release.
+    pub quiet: Option<u64>,
+    /// The last admitted `SMSG_LOOT_RESPONSE`, until its release.
+    pub window: Option<ExtLootWindow>,
+    /// Admitted responses so far, so a crate sees a new one for the same guid.
+    pub responses: u64,
+}
+
+/// One loot window as the wire delivered it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ExtLootWindow {
+    pub guid: u64,
+    /// Copper; 0 for none.
+    pub gold: u32,
+    pub items: Vec<ExtLootRow>,
+}
+
+/// One loot row.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ExtLootRow {
+    /// The wire slot `CMSG_AUTOSTORE_LOOT_ITEM` names.
+    pub slot: u8,
+    pub item_id: u32,
+    pub count: u32,
+    pub random_property: u32,
+}
+
 /// Cancel our aura of `spell_id` (`CMSG_CANCEL_AURA`), as a right-click on its icon does.
 #[derive(Message, Clone, Copy, Debug)]
 pub struct ExtCancelAura {
@@ -374,6 +419,33 @@ fn apply_ext_attacks(
     }
 }
 
+fn apply_ext_loot(
+    mut sends: MessageReader<ExtLootSend>,
+    net: Res<crate::net::NetCommands>,
+    mut latch: ResMut<crate::ui_loot::LootLatch>,
+    mut ext: ResMut<ExtLoot>,
+) {
+    use crate::net::ClientCommand as C;
+    for send in sends.read() {
+        let cmd = match *send {
+            ExtLootSend::Open { guid, quiet } => {
+                latch.0 = Some(guid);
+                ext.quiet = quiet.then_some(guid);
+                C::Loot { guid }
+            }
+            ExtLootSend::Item(slot) => C::AutostoreLootItem { slot },
+            ExtLootSend::Money => C::LootMoney,
+            ExtLootSend::Release(guid) => {
+                if ext.quiet == Some(guid) {
+                    ext.quiet = None;
+                }
+                C::LootRelease { guid }
+            }
+        };
+        let _ = net.0.send(cmd);
+    }
+}
+
 fn apply_ext_queries(mut asks: MessageReader<ExtQuery>, net: Res<crate::net::NetCommands>) {
     for ask in asks.read() {
         let cmd = match *ask {
@@ -467,6 +539,8 @@ impl Plugin for ExtPlugin {
             .init_resource::<NameplateHook>()
             .init_resource::<ExtUnitTokens>()
             .init_resource::<ExtSound>()
+            .add_message::<ExtLootSend>()
+            .init_resource::<ExtLoot>()
             .configure_sets(
                 Update,
                 ExtCastSet
@@ -476,6 +550,7 @@ impl Plugin for ExtPlugin {
                     .before(apply_ext_selects)
                     .before(apply_ext_attacks)
                     .before(apply_ext_queries)
+                    .before(apply_ext_loot)
                     .before(apply_ext_combat_text),
             )
             // `apply_ext_casts` runs in the target chain, ahead of the frame's script calls: a
@@ -488,6 +563,7 @@ impl Plugin for ExtPlugin {
                     apply_ext_selects.in_set(crate::target::TargetUpdate),
                     apply_ext_attacks.after(apply_ext_selects),
                     apply_ext_queries,
+                    apply_ext_loot,
                     apply_ext_combat_text.before(crate::ui_pass::UiQuadAppend),
                 ),
             );

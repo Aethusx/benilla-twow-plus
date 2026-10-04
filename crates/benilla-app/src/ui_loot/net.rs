@@ -27,7 +27,11 @@ pub(super) fn register(app: &mut App) {
 
 /// An admitted response selects a looted unit (`0x5ebc35` → `0x48f3a0`) before the window opens
 /// (`0x4c1cb0`), so the outgoing target's teardown closes a window still open on it.
-fn on_response(In(ev): In<SessionEvent>, mut select: crate::target::SelectCommit) {
+fn on_response(
+    In(ev): In<SessionEvent>,
+    mut select: crate::target::SelectCommit,
+    ext: Option<ResMut<crate::ext::ExtLoot>>,
+) {
     let SessionEvent::LootResponse {
         guid,
         loot_type,
@@ -45,6 +49,26 @@ fn on_response(In(ev): In<SessionEvent>, mut select: crate::target::SelectCommit
         "net: loot response {guid:#x} type {loot_type} gold {gold} {} item(s)",
         items.len()
     );
+    if let Some(mut ext) = ext {
+        ext.responses += 1;
+        ext.window = Some(crate::ext::ExtLootWindow {
+            guid,
+            gold,
+            items: items
+                .iter()
+                .map(|i| crate::ext::ExtLootRow {
+                    slot: i.slot,
+                    item_id: i.item_id,
+                    count: i.count,
+                    random_property: i.random_property_id,
+                })
+                .collect(),
+        });
+        // A crate's quiet session: the window is its alone, with no selection and no frame.
+        if ext.quiet == Some(guid) {
+            return;
+        }
+    }
     select.select_unit(guid);
     select.seam.loot.open(guid, loot_type, gold, items);
 }
@@ -90,8 +114,14 @@ fn on_release_response(
     mut pending: ResMut<PendingItemOps>,
     mut lock_cleared: ResMut<LockTransitions>,
     mut dead: super::DeadUnitDeselect,
+    ext: Option<ResMut<crate::ext::ExtLoot>>,
 ) {
     if let SessionEvent::LootReleaseResponse { guid } = ev {
+        if let Some(mut ext) = ext {
+            if ext.window.as_ref().is_some_and(|w| w.guid == guid) {
+                ext.window = None;
+            }
+        }
         let unlock = ItemUnlock {
             pending: &mut pending,
             lock_cleared: &mut lock_cleared,
@@ -847,6 +877,31 @@ mod tests {
         // The setter's dedup: a second window on the selected body sends nothing.
         respond(&mut world, CORPSE, 1);
         assert!(rx.try_recv().is_err());
+    }
+
+    /// A crate's quiet session: the window lands in [`crate::ext::ExtLoot`] alone, with no frame
+    /// and no selection; an ordinary one is recorded there too and opens as before.
+    #[test]
+    fn a_quiet_crate_session_takes_the_window_and_leaves_the_frame_shut() {
+        let (mut world, rx) = tabbed_world();
+        world.init_resource::<crate::ext::ExtLoot>();
+        world.resource_mut::<crate::ext::ExtLoot>().quiet = Some(CORPSE);
+        world.resource_mut::<LootLatch>().0 = Some(CORPSE);
+        respond(&mut world, CORPSE, 1);
+        assert_eq!(world.resource::<LootState>().source(), None);
+        assert_eq!(
+            world.resource::<crate::target::Selection>().guid,
+            Some(KOBOLD)
+        );
+        assert!(rx.try_recv().is_err(), "no selection sent");
+        let ext = world.resource::<crate::ext::ExtLoot>();
+        assert_eq!(ext.window.as_ref().map(|w| w.guid), Some(CORPSE));
+        assert_eq!(ext.responses, 1);
+
+        world.resource_mut::<crate::ext::ExtLoot>().quiet = None;
+        respond(&mut world, CORPSE, 1);
+        assert_eq!(world.resource::<LootState>().source(), Some(CORPSE));
+        assert_eq!(world.resource::<crate::ext::ExtLoot>().responses, 2);
     }
 
     /// `0x48f3a0` tests `TYPEMASK_UNIT`; `SetSelection`'s `IsSelectable` refuses the flagged unit;
