@@ -25,6 +25,7 @@ pub(crate) mod equipmentset;
 mod frame;
 mod info;
 pub(crate) mod item;
+mod itemscrape;
 pub(crate) mod lossofcontrol;
 pub(crate) mod luasyntax;
 mod macro_api;
@@ -187,6 +188,7 @@ pub fn install(ca: &Ca, script: &mut UiScript) {
             creature::install(&api)?;
             macro_api::install(&api)?;
             showtooltip::install(&api)?;
+            itemscrape::install(&api)?;
             unit::install(&api)?;
             Ok(api.private)
         })();

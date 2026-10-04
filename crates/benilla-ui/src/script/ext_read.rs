@@ -389,3 +389,27 @@ pub fn macro_index_by_name(lua: &Lua, name: &str) -> usize {
     lua.app_data_ref::<Model>()
         .map_or(0, |m| m.macros.index_by_name(name))
 }
+
+/// The item enclosed in an open inbox row (1-based): its template entry, `None` for no item.
+pub fn inbox_item(lua: &Lua, row: usize) -> Option<u32> {
+    let model = lua.app_data_ref::<Model>()?;
+    let mail = model.mail.as_ref()?;
+    mail.inbox
+        .get(row.checked_sub(1)?)
+        .map(|r| r.item_id)
+        .filter(|id| *id != 0)
+}
+
+/// The item in the auction sell slot: `(entry, link)`.
+pub fn auction_sell_item(lua: &Lua) -> Option<(u32, Option<String>)> {
+    let model = lua.app_data_ref::<Model>()?;
+    let it = model.auction_sell_item.as_ref()?;
+    Some((it.item_id, it.link.clone()))
+}
+
+/// The item attached to the outgoing mail: `(entry, link)`.
+pub fn send_mail_item(lua: &Lua) -> Option<(u32, Option<String>)> {
+    let model = lua.app_data_ref::<Model>()?;
+    let it = model.mail_send_item.as_ref()?;
+    Some((it.item_id, it.link.clone()))
+}
