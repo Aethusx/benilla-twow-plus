@@ -80,12 +80,13 @@ pub(super) fn feed_social(
     let selected_friend = index_of(&display_order, social.selected_friend);
     let selected_ignore = index_of(&ignore_order, social.selected_ignore);
     social.display_order = display_order;
-    social.ignore_display_order = ignore_order;
+    social.ignore_display_order = ignore_order.clone();
 
     script.set_social(VmSocial {
         friends,
         selected_friend,
         ignores,
+        ignore_guids: ignore_order,
         selected_ignore,
         who,
         who_total: social.who_total,
@@ -240,6 +241,12 @@ fn friend_rows(
                         .to_string(),
                     connected: online,
                     status: away(entry.status),
+                    guid: entry.guid,
+                    class_file: online
+                        .then(|| class_names(entry.class as u8))
+                        .flatten()
+                        .map(|(_, token)| token.to_string())
+                        .unwrap_or_default(),
                 },
             )
         })

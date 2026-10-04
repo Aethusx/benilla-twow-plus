@@ -35,6 +35,7 @@ fn friend(name: &str, level: u32, class: &str, area: &str, connected: bool) -> F
         area: area.to_string(),
         connected,
         status: String::new(),
+        ..Default::default()
     }
 }
 

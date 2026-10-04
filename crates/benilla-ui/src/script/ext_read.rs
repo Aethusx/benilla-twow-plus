@@ -506,3 +506,13 @@ pub fn select_faction(lua: &Lua, slot: Option<u32>) {
         model.reputation_selected = slot;
     }
 }
+
+/// The social snapshot: friends, ignores and the last `/who` answer.
+pub fn social(lua: &Lua) -> Option<super::SocialState> {
+    Some(lua.app_data_ref::<Model>()?.social.clone())
+}
+
+/// The last `SetWhoToUI` value.
+pub fn who_to_ui(lua: &Lua) -> bool {
+    lua.app_data_ref::<Model>().is_some_and(|m| m.who_to_ui)
+}

@@ -22,6 +22,10 @@ pub struct FriendInfo {
     pub connected: bool,
     /// The away tag the friends-list template takes: `""`, `"<AFK>"` or `"<DND>"`.
     pub status: String,
+    /// The friend's guid, for a crate's guid-keyed readers.
+    pub guid: u64,
+    /// The class token (`"WARRIOR"`), empty offline as [`Self::class`] is.
+    pub class_file: String,
 }
 
 /// One `/who` row in `GetWhoInfo`'s order, names localized; race comes before class, where the
@@ -44,6 +48,8 @@ pub struct SocialState {
     /// The selected friend, 1-based, 0 for none (`0x5ad260` returns the stored slot + 1).
     pub selected_friend: u32,
     pub ignores: Vec<String>,
+    /// The ignores' guids, in [`Self::ignores`]' order.
+    pub ignore_guids: Vec<u64>,
     /// The selected ignore, on the same scale.
     pub selected_ignore: u32,
     /// The last `/who` answer's rows, at most 49.
@@ -445,6 +451,7 @@ pub(super) fn install(lua: &Lua) -> mlua::Result<()> {
                 _ => true,
             };
             let mut model = lua.app_data_mut::<Model>().expect("model app_data");
+            model.who_to_ui = on;
             model.social_requests.push(SocialRequest::SetWhoToUi(on));
             Ok(())
         })?,
