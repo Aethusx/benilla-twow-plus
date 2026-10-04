@@ -64,6 +64,8 @@ pub struct State {
     pub(crate) modifiers: u8,
     /// The creature, gameobject and quest records and their loads (`Cache::QueryLoad`).
     pub templates: templates::Templates,
+    /// `#showtooltip` / `#show` macros (`Macro::ShowTooltip`).
+    pub(crate) showtooltip: lua::showtooltip::ShowTooltip,
     /// The nameplate diff: last frame's `(guid, frame)` pairs and every frame ever announced.
     plates_last: Vec<(u64, u32)>,
     plates_seen: std::collections::HashSet<u32>,
@@ -229,6 +231,7 @@ fn frame(
     mut casts: MessageWriter<ExtCast>,
     mut attacks: MessageWriter<ExtAttack>,
     mut queries: MessageWriter<ExtQuery>,
+    mut macro_display: ResMut<benilla_app::ext::ExtMacroDisplay>,
     keys: Option<Res<bevy::input::ButtonInput<bevy::input::keyboard::KeyCode>>>,
     mut ext_tokens: ResMut<ExtUnitTokens>,
     mut notes: MessageReader<ExtCastNote>,
@@ -437,6 +440,7 @@ fn frame(
     for (name, args) in cast_events(&ca, script.lua(), cast_fires) {
         script.queue_event(name, args);
     }
+    lua::showtooltip::tick(script.lua(), &ca, &mut macro_display, now);
     for (name, id, ok) in load_results {
         script.queue_event(
             name,

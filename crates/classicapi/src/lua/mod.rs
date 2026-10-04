@@ -31,6 +31,7 @@ mod macro_api;
 pub(crate) mod misc;
 mod nameplate;
 mod playerinfo;
+pub(crate) mod showtooltip;
 pub(crate) mod spell;
 pub(crate) mod time;
 pub(crate) mod unit;
@@ -185,6 +186,7 @@ pub fn install(ca: &Ca, script: &mut UiScript) {
             playerinfo::install(&api)?;
             creature::install(&api)?;
             macro_api::install(&api)?;
+            showtooltip::install(&api)?;
             unit::install(&api)?;
             Ok(api.private)
         })();
