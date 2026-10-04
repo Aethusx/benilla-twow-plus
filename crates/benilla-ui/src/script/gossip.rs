@@ -23,6 +23,12 @@ pub struct GossipOptionView {
     /// The lowercase icon type (`"gossip"`, `"vendor"`, `"taxi"`, …); `GossipFrame.lua:123` draws
     /// `Interface\GossipFrame\<Type>GossipIcon`.
     pub icon_type: String,
+    /// The wire's option index, the id a selection names.
+    pub index: u32,
+    /// The wire's icon byte.
+    pub icon: u8,
+    /// A password option (`boxCoded`).
+    pub coded: bool,
 }
 
 /// One quest row of `SMSG_GOSSIP_MESSAGE`; a click sends `CMSG_QUESTGIVER_QUERY_QUEST`. `active`,
@@ -34,6 +40,9 @@ pub struct GossipQuestRow {
     /// and `GossipFrame.lua:66` strides by 2 over them.
     pub level: u32,
     pub active: bool,
+    pub quest_id: u32,
+    /// Wire status 4: ready to turn in.
+    pub complete: bool,
 }
 
 /// One open gossip menu, pushed whole by the app.
@@ -212,10 +221,12 @@ mod tests {
                 GossipOptionView {
                     label: "Let me browse your goods.".into(),
                     icon_type: "vendor".into(),
+                    ..Default::default()
                 },
                 GossipOptionView {
                     label: "I would like to sign the petition.".into(),
                     icon_type: "gossip".into(),
+                    ..Default::default()
                 },
             ],
         }
@@ -271,16 +282,19 @@ mod tests {
                 title: "Report to Goldshire".into(),
                 level: 5,
                 active: true,
+                ..Default::default()
             },
             GossipQuestRow {
                 title: "A Threat Within".into(),
                 level: 7,
                 active: false,
+                ..Default::default()
             },
             GossipQuestRow {
                 title: "Kobold Camp Cleanup".into(),
                 level: 9,
                 active: false,
+                ..Default::default()
             },
         ];
         s.set_gossip(Some(m));

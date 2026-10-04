@@ -230,7 +230,8 @@ pub use party::{PartyMemberInfo, PartyRequest, PartyState, RaidMemberInfo, Saved
 pub use pet::{PetActionView, PetStats};
 pub use pvp::{HonorState, InspectHonorData};
 pub use quest::{
-    QuestAction, QuestItemView, QuestPanel, QuestRewardSpell, QuestSelect, QuestState,
+    GreetingQuest, QuestAction, QuestItemView, QuestPanel, QuestRewardSpell, QuestSelect,
+    QuestState,
 };
 pub use quest_log::{QuestLogDetail, QuestLogEntryView, QuestLogObjectiveView, QuestLogState};
 pub(crate) use region::{apply_font_parts, implicit_creation_anchor_lua};

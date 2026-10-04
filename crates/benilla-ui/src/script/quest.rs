@@ -53,6 +53,15 @@ pub struct QuestRewardSpell {
 }
 
 /// One open questgiver panel, with every field the four panels read; pushed whole by the app.
+/// One greeting row of `SMSG_QUESTGIVER_QUEST_LIST`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct GreetingQuest {
+    pub quest_id: u32,
+    pub level: u32,
+    /// Wire status 4: ready to turn in.
+    pub complete: bool,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct QuestState {
     pub panel: QuestPanel,
@@ -60,6 +69,9 @@ pub struct QuestState {
     pub greeting: String,
     pub active_titles: Vec<String>,
     pub available_titles: Vec<String>,
+    /// The same rows' ids, levels and turn-in status, in the same order.
+    pub active_quests: Vec<GreetingQuest>,
+    pub available_quests: Vec<GreetingQuest>,
     // Detail, progress and reward panels.
     pub title: String,
     /// The text of whichever panel is live: quest, progress or reward.
@@ -89,6 +101,8 @@ impl Default for QuestState {
             greeting: String::new(),
             active_titles: Vec::new(),
             available_titles: Vec::new(),
+            active_quests: Vec::new(),
+            available_quests: Vec::new(),
             title: String::new(),
             body: String::new(),
             objectives: String::new(),

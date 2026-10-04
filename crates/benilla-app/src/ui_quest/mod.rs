@@ -330,11 +330,19 @@ fn snapshot(
         QuestView::Greeting(l) => {
             let mut active_titles = Vec::new();
             let mut available_titles = Vec::new();
+            let (mut active_quests, mut available_quests) = (Vec::new(), Vec::new());
             for q in &l.quests {
+                let row = benilla_ui::script::GreetingQuest {
+                    quest_id: q.quest_id,
+                    level: q.level,
+                    complete: q.icon == 4,
+                };
                 if row_is_active(q.icon) {
                     active_titles.push(q.title.clone());
+                    active_quests.push(row);
                 } else {
                     available_titles.push(q.title.clone());
+                    available_quests.push(row);
                 }
             }
             QuestState {
@@ -342,6 +350,8 @@ fn snapshot(
                 greeting: sub(&l.greeting),
                 active_titles,
                 available_titles,
+                active_quests,
+                available_quests,
                 ..Default::default()
             }
         }

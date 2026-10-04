@@ -434,3 +434,28 @@ pub fn mark_cvar_temporary(lua: &Lua, name: &str, temporary: bool) {
         model.cvar_temp_marks.push((name.to_string(), temporary));
     }
 }
+
+/// The open gossip menu.
+pub fn gossip_menu(lua: &Lua) -> Option<super::GossipMenu> {
+    lua.app_data_ref::<Model>()?.gossip.clone()
+}
+
+/// A greeting panel's rows, each with its title.
+pub type GreetingRows = Vec<(String, super::quest::GreetingQuest)>;
+
+/// The open questgiver greeting panel: `(greeting, active rows, available rows)`.
+pub fn quest_greeting(lua: &Lua) -> Option<(String, GreetingRows, GreetingRows)> {
+    let model = lua.app_data_ref::<Model>()?;
+    let q = model.quest.as_ref()?;
+    if q.panel != super::quest::QuestPanel::Greeting {
+        return None;
+    }
+    let zip = |titles: &[String], rows: &[super::quest::GreetingQuest]| {
+        titles.iter().cloned().zip(rows.iter().copied()).collect()
+    };
+    Some((
+        q.greeting.clone(),
+        zip(&q.active_titles, &q.active_quests),
+        zip(&q.available_titles, &q.available_quests),
+    ))
+}

@@ -202,10 +202,12 @@ fn snapshot(state: &GossipState) -> Option<GossipMenu> {
         quests: state
             .quests
             .iter()
-            .map(|(_id, icon, level, title)| GossipQuestRow {
+            .map(|(id, icon, level, title)| GossipQuestRow {
                 title: title.clone(),
                 level: *level,
                 active: row_is_active(*icon),
+                quest_id: *id,
+                complete: *icon == 4,
             })
             .collect(),
         options: state
@@ -214,6 +216,9 @@ fn snapshot(state: &GossipState) -> Option<GossipMenu> {
             .map(|o| GossipOptionView {
                 label: o.message.clone(),
                 icon_type: gossip_icon_type(o.icon).into(),
+                index: o.index,
+                icon: o.icon,
+                coded: o.coded,
             })
             .collect(),
     })
