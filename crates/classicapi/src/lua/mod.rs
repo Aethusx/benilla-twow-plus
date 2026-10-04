@@ -25,6 +25,7 @@ pub(crate) mod cvar;
 mod encoding;
 pub(crate) mod equipmentset;
 mod frame;
+mod gossip;
 mod info;
 pub(crate) mod item;
 mod itemscrape;
@@ -197,6 +198,7 @@ pub fn install(ca: &Ca, script: &mut UiScript) {
             cvar::install(&api)?;
             totem::install(&api)?;
             targeting::install(&api)?;
+            gossip::install(&api)?;
             unit::install(&api)?;
             Ok(api.private)
         })();
