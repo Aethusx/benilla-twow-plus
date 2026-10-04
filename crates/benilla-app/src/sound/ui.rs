@@ -80,6 +80,70 @@ fn drain_ui_sounds(
     }
 }
 
+/// A crate's [`crate::ext::ExtSound`]: its mutes and log switch into the funnel, its kit plays
+/// started 2D on SFX as `PlaySound` does, the funnel's log out, and its live plays back. Untouched,
+/// the resource leaves every play as it was.
+fn apply_ext_sound(
+    ext: Option<ResMut<crate::ext::ExtSound>>,
+    kits: Option<ResMut<SoundKits>>,
+    assets: Option<Res<WorldAssets>>,
+    mut out: NonSendMut<SoundOutput>,
+    config: Res<SoundConfig>,
+) {
+    let (Some(mut ext), Some(mut kits)) = (ext, kits) else {
+        return;
+    };
+    if ext.is_changed() {
+        if kits.muted != ext.muted {
+            kits.muted = ext.muted.clone();
+        }
+        kits.record = ext.record;
+    }
+    let plays = std::mem::take(&mut ext.bypass_change_detection().plays);
+    if let Some(assets) = assets {
+        for p in plays {
+            let extras = kit::PlayExtras {
+                volume_mult: kit::Volume(p.volume.unwrap_or(1.0)),
+                ..Default::default()
+            };
+            match kit::play_kit_ext(
+                &mut kits,
+                &assets,
+                &mut out,
+                &config,
+                Vec3::ZERO,
+                KitRef::Id(p.kit),
+                None,
+                kit::SoundCategory::Sfx,
+                extras,
+            ) {
+                Ok(true) => {
+                    if let Some(c) = out.channels.last_mut() {
+                        c.ext = Some(p.token);
+                    }
+                }
+                Ok(false) => {}
+                Err(e) => debug!("sound(ext): kit {} — {e:#}", p.kit),
+            }
+        }
+    }
+    if !kits.opened.is_empty() {
+        let opened = std::mem::take(&mut kits.opened);
+        let log = &mut ext.opened;
+        log.extend(opened);
+        let over = log.len().saturating_sub(crate::ext::EXT_SOUND_LOG_CAP);
+        log.drain(..over);
+    }
+    let live: std::collections::HashMap<u64, f32> = out
+        .channels
+        .iter()
+        .filter_map(|c| Some((c.ext?, c.ext_volume())))
+        .collect();
+    if live != ext.live {
+        ext.live = live;
+    }
+}
+
 /// The `ItemGroupSounds.dbc` catalog: the pickup, put-down and use kits per item sound group.
 #[derive(Resource)]
 struct ItemSounds(ItemGroupSoundsCatalog);
@@ -349,6 +413,7 @@ pub(super) fn plugin(app: &mut App) {
             Update,
             (
                 drain_ui_sounds,
+                apply_ext_sound,
                 play_item_gesture_sounds,
                 play_loot_pickup_sounds,
                 play_auto_equip_sounds,

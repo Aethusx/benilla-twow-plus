@@ -66,12 +66,33 @@ pub(crate) struct SoundKits {
     /// client's SoundEntries does not ship, and a looping object event re-fires every cycle, so
     /// only the first miss per id is an error; the catalog never grows, so later ones are silent.
     reported_missing: HashSet<u32>,
+    /// A crate's muted paths and file log ([`crate::ext::ExtSound`]), copied in by
+    /// [`super::ui`]; empty and off by default.
+    pub(super) muted: HashSet<String>,
+    pub(super) record: bool,
+    pub(super) opened: Vec<(String, bool)>,
 }
 
 impl SoundKits {
     /// One 32-bit draw for [`bark_chance_pass`], off the stream the per-shot variations share.
     pub(super) fn roll(&mut self) -> u32 {
         self.rng.next()
+    }
+
+    /// The funnel's gate for a crate: log the open when asked, and refuse a muted path, as the
+    /// play-by-path hook a mute hangs on answers NULL. `true` lets the file open.
+    fn open_gate(&mut self, path: &str) -> bool {
+        if self.muted.is_empty() && !self.record {
+            return true;
+        }
+        let muted = !self.muted.is_empty()
+            && self
+                .muted
+                .contains(&path.replace('/', "\\").to_ascii_lowercase());
+        if self.record {
+            self.opened.push((path.to_string(), muted));
+        }
+        !muted
     }
 
     /// The kit table, for [`super::vocal`]'s table build, which needs variation counts ahead of
@@ -113,6 +134,8 @@ pub(crate) struct ActiveChannel {
     amp: f32,
     /// Which per-unit latch this channel's liveness represents ([`Latch`]).
     latch: Latch,
+    /// The crate token of an [`crate::ext::ExtSound`] play.
+    pub(super) ext: Option<u64>,
 }
 
 /// Which per-unit latch a channel holds. The reference keeps separate handles on a unit,
@@ -493,6 +516,9 @@ pub(super) fn play_kit_ext(
         .0
         .clone();
 
+    if !kits.open_gate(&path) {
+        return Ok(false);
+    }
     // Decode (cached).
     let data = kits.sfx(assets, &path)?;
 
@@ -573,8 +599,17 @@ pub(super) fn play_kit_ext(
         amp,
         bus,
         latch,
+        ext: None,
     });
     Ok(true)
+}
+
+impl ActiveChannel {
+    /// The volume a crate reads for its play: the kit's volume after the per-shot scale and the
+    /// driver gain, before the slider and distance.
+    pub(super) fn ext_volume(&self) -> f32 {
+        self.v * self.gain
+    }
 }
 
 /// The state of `unit`'s live bark: `[unit+0xb20]` live and `[unit+0xb24]`; `None` is a free slot
@@ -722,6 +757,9 @@ pub(crate) fn play_file(
     if config.world_hold {
         return Ok(());
     }
+    if !kits.open_gate(path) {
+        return Ok(());
+    }
     let data = kits.sfx(assets, path)?;
     let amp = config.category_amp(category);
     let data = data.volume(mixer::amp_to_db(amp));
@@ -752,6 +790,7 @@ pub(crate) fn play_file(
         amp,
         bus: Bus::DEFAULT,
         latch: Latch::None,
+        ext: None,
     });
     Ok(())
 }
@@ -783,6 +822,9 @@ impl SoundKits {
             pick: HashMap::new(),
             rng: Rng(0x9e37_79b9),
             reported_missing: HashSet::new(),
+            muted: HashSet::new(),
+            record: false,
+            opened: Vec::new(),
         }
     }
 
@@ -1334,5 +1376,22 @@ mod tests {
     fn the_reference_no_duplicate_flag_still_wins() {
         const { assert!(SAME_KIT_MAX > 1) };
         assert_eq!(sound_kit_flags::NO_DUPLICATES, 0x20);
+    }
+    #[test]
+    fn a_crate_mute_refuses_the_open_and_the_log_records_it() {
+        let mut kits = SoundKits::new(benilla_formats::SoundKitCatalog::empty_for_tests());
+        assert!(kits.open_gate(r"Sound\A.wav"));
+        assert!(kits.opened.is_empty(), "no log unless asked");
+        kits.muted.insert(r"sound\creature\a.wav".into());
+        kits.record = true;
+        assert!(!kits.open_gate("Sound/Creature/A.WAV"));
+        assert!(kits.open_gate(r"Sound\B.wav"));
+        assert_eq!(
+            kits.opened,
+            vec![
+                ("Sound/Creature/A.WAV".to_string(), true),
+                (r"Sound\B.wav".to_string(), false)
+            ]
+        );
     }
 }

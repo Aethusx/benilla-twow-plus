@@ -228,6 +228,41 @@ pub struct NameplateHook {
     pub hidden: std::collections::HashSet<u64>,
 }
 
+/// A crate's hold on the sound-effect funnel, the kit and `PlaySoundFile` plays (the client's
+/// `FUN_SOUND_PLAY_BY_PATH`): kits it starts by id, paths it mutes, and a log of the files opened.
+/// The default plays, mutes and logs nothing. Zone music and ambience stream through their own
+/// loader and pass it by.
+#[derive(Resource, Default)]
+pub struct ExtSound {
+    /// Kits to start this frame, 2D on the SFX slider; benilla drains it.
+    pub plays: Vec<ExtSoundPlay>,
+    /// Paths that never open, lowercased with `\` separators: a kit whose pick is one, or a
+    /// `PlaySoundFile` of one, plays nothing.
+    pub muted: std::collections::HashSet<String>,
+    /// Log every file the funnel opens, muted ones included, into [`Self::opened`].
+    pub record: bool,
+    /// The files opened since the crate last drained, `(path, muted)`, oldest first; capped at
+    /// [`EXT_SOUND_LOG_CAP`] so an undrained log cannot grow.
+    pub opened: Vec<(String, bool)>,
+    /// The crate's plays still sounding, `token -> volume` (the kit's volume after the scale),
+    /// rewritten each frame a play is live or ends.
+    pub live: std::collections::HashMap<u64, f32>,
+}
+
+/// The most entries [`ExtSound::opened`] holds; older ones drop.
+pub const EXT_SOUND_LOG_CAP: usize = 256;
+
+/// One kit [`ExtSound::plays`] starts.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ExtSoundPlay {
+    /// The crate's name for the play, its key in [`ExtSound::live`].
+    pub token: u64,
+    /// The `SoundEntries.dbc` id.
+    pub kit: u32,
+    /// A multiplier on the kit's own volume; `None` is 1.0.
+    pub volume: Option<f32>,
+}
+
 /// Cancel our aura of `spell_id` (`CMSG_CANCEL_AURA`), as a right-click on its icon does.
 #[derive(Message, Clone, Copy, Debug)]
 pub struct ExtCancelAura {
@@ -431,6 +466,7 @@ impl Plugin for ExtPlugin {
             .init_resource::<CombatTextHook>()
             .init_resource::<NameplateHook>()
             .init_resource::<ExtUnitTokens>()
+            .init_resource::<ExtSound>()
             .configure_sets(
                 Update,
                 ExtCastSet
