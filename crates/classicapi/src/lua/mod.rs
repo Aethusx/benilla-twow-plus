@@ -21,6 +21,7 @@ mod color;
 mod container;
 mod core;
 mod creature;
+pub(crate) mod cvar;
 mod encoding;
 pub(crate) mod equipmentset;
 mod frame;
@@ -191,6 +192,7 @@ pub fn install(ca: &Ca, script: &mut UiScript) {
             showtooltip::install(&api)?;
             itemscrape::install(&api)?;
             encoding::install(&api)?;
+            cvar::install(&api)?;
             unit::install(&api)?;
             Ok(api.private)
         })();

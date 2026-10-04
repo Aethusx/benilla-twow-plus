@@ -64,6 +64,8 @@ pub struct State {
     pub(crate) modifiers: u8,
     /// The creature, gameobject and quest records and their loads (`Cache::QueryLoad`).
     pub templates: templates::Templates,
+    /// `C_CVar`'s temporary values (`CVar::Temp`).
+    pub(crate) temp_cvars: Vec<lua::cvar::Temp>,
     /// `#showtooltip` / `#show` macros (`Macro::ShowTooltip`).
     pub(crate) showtooltip: lua::showtooltip::ShowTooltip,
     /// The nameplate diff: last frame's `(guid, frame)` pairs and every frame ever announced.
@@ -441,6 +443,7 @@ fn frame(
         script.queue_event(name, args);
     }
     lua::showtooltip::tick(script.lua(), &ca, &mut macro_display, now);
+    lua::cvar::tick(script.lua(), &ca);
     for (name, id, ok) in load_results {
         script.queue_event(
             name,
