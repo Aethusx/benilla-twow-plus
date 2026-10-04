@@ -310,3 +310,37 @@ pub fn drag_source(lua: &Lua) -> Option<u32> {
     let d = model.drag.as_ref().filter(|d| d.started)?;
     model.frame_to_id.get(&d.source).copied()
 }
+
+/// A macro by 1-based index: `(name, icon texture, body)`.
+pub fn macro_view(lua: &Lua, index: u32) -> Option<(String, Option<String>, String)> {
+    let model = lua.app_data_ref::<Model>()?;
+    let m = model.macros.get(index as usize)?;
+    Some((m.name.clone(), m.texture.clone(), m.body.clone()))
+}
+
+/// A macro's cached cast as the app derived it from the body (`[rec+0x564]`).
+pub fn macro_binding(lua: &Lua, index: u32) -> Option<super::MacroBinding> {
+    lua.app_data_ref::<Model>()?
+        .macro_bindings
+        .get(&index)
+        .copied()
+}
+
+/// Moves on every macro seed and edit.
+pub fn macros_generation(lua: &Lua) -> u64 {
+    lua.app_data_ref::<Model>()
+        .map_or(0, |m| m.macros_generation)
+}
+
+/// Put `f` in front of a GameTooltip method, for a crate that backports a later client's
+/// behaviour of it; the method it replaces is returned for `f` to fall through to.
+pub fn replace_tooltip_method(
+    lua: &Lua,
+    name: &str,
+    f: mlua::Function,
+) -> mlua::Result<Option<mlua::Function>> {
+    let t: mlua::Table = lua.named_registry_value(super::tooltip::REG_TOOLTIP_METHODS)?;
+    let old: Option<mlua::Function> = t.raw_get(name)?;
+    t.raw_set(name, f)?;
+    Ok(old)
+}

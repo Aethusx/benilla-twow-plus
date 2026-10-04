@@ -55,6 +55,7 @@ fn app_with_food_on_the_bar() -> (App, crossbeam_channel::Receiver<ClientCommand
         .init_resource::<PetTameFailures>()
         .init_resource::<UiErrorKeys>()
         .init_resource::<UiErrorTexts>()
+        .init_resource::<crate::ext::ExtMacroDisplay>()
         // The cast-failure combat-log line rides the same drain.
         .init_resource::<crate::ui_chat::ChatLog>()
         .init_resource::<crate::sound::MessageSounds>()
@@ -280,6 +281,7 @@ fn a_macro_slot_shows_the_macros_own_icon_and_follows_an_edit() {
         .init_resource::<PetTameFailures>()
         .init_resource::<UiErrorKeys>()
         .init_resource::<UiErrorTexts>()
+        .init_resource::<crate::ext::ExtMacroDisplay>()
         // The cast-failure combat-log line rides the same drain.
         .init_resource::<crate::ui_chat::ChatLog>()
         .init_resource::<crate::sound::MessageSounds>()
@@ -475,6 +477,7 @@ fn a_pets_refused_cast_writes_no_combat_log_line() {
         .init_resource::<PetTameFailures>()
         .init_resource::<UiErrorKeys>()
         .init_resource::<UiErrorTexts>()
+        .init_resource::<crate::ext::ExtMacroDisplay>()
         .init_resource::<crate::ui_chat::ChatLog>()
         .init_resource::<crate::sound::MessageSounds>()
         .insert_resource(NetCommands(tx));

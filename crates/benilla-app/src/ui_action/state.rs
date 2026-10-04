@@ -51,13 +51,25 @@ enum SlotResolve {
 
 /// Resolves a slot through its macro: every `Is*Action`/`GetActionCooldown` binding goes through
 /// `0x4e5a50`, so a macro that casts Fireball is the Fireball slot, its own icon aside. Spells
-/// only: 1.12 has no `/use`, so no macro names an item.
+/// only from the body: 1.12 has no `/use`, so no macro names an item; a crate's
+/// [`crate::ext::ExtMacroDisplay`] stands in for the body's spell, and may name one.
 fn resolve_through_macro(
     kind: u8,
     action: u32,
     bound: &crate::ui_macro::MacroBoundSpells,
+    display: &crate::ext::ExtMacroDisplay,
 ) -> SlotResolve {
+    use crate::ext::MacroShow;
     use crate::ui_macro::BoundSpell;
+    if kind == ACTION_KIND_MACRO {
+        match display.0.get(&action) {
+            Some(MacroShow::Spell(s)) => return SlotResolve::Action(ACTION_KIND_SPELL, *s),
+            Some(MacroShow::Item(i)) => return SlotResolve::Action(ACTION_KIND_ITEM, *i),
+            Some(MacroShow::Nothing) => return SlotResolve::BareMacro,
+            Some(MacroShow::Unresolved) => return SlotResolve::Dead,
+            None => {}
+        }
+    }
     match kind {
         ACTION_KIND_MACRO => match bound.0.get(&action) {
             Some(BoundSpell::Spell(s)) => SlotResolve::Action(ACTION_KIND_SPELL, *s),
@@ -84,7 +96,10 @@ pub(super) fn feed_action_state(
         Res<crate::spell::QueuedMeleeSpell>,
         Res<crate::spell::ActiveChannel>,
         Res<crate::spell::SpellTargeting>,
-        Res<crate::ui_macro::MacroBoundSpells>,
+        (
+            Res<crate::ui_macro::MacroBoundSpells>,
+            Res<crate::ext::ExtMacroDisplay>,
+        ),
         Res<crate::spell::SpellModifiers>,
         // The caster's and the target's reach and motion, which the range compare reads.
         crate::spell::RangeUnits,
@@ -120,7 +135,8 @@ pub(super) fn feed_action_state(
         memory.last_cd_trace = Some(now);
     }
 
-    let (pending, queued_melee, channel, targeting, bound, spell_mods, range_units) = &cast_state;
+    let (pending, queued_melee, channel, targeting, (bound, display), spell_mods, range_units) =
+        &cast_state;
     let me = self_q.iter().next();
     // The bags, walked once per frame for every reagent, totem and item count below.
     let carried = me
@@ -150,7 +166,7 @@ pub(super) fn feed_action_state(
     for (&slot, button) in &actions.buttons {
         let action = u32::from(slot) + 1;
         let mut st = ActionState::default();
-        let (kind, id) = match resolve_through_macro(button.kind, button.action, bound) {
+        let (kind, id) = match resolve_through_macro(button.kind, button.action, bound, display) {
             SlotResolve::Action(kind, id) => (kind, id),
             SlotResolve::BareMacro => {
                 // `0x4e5050`'s spell-less leg: usable. It also greys every spell-less macro and
@@ -401,32 +417,65 @@ mod tests {
         bound.0.insert(5, BoundSpell::Unresolved); // macro 5 is `/cast Pyroblast`, unknown
 
         assert_eq!(
-            resolve_through_macro(ACTION_KIND_MACRO, 3, &bound),
+            resolve_through_macro(ACTION_KIND_MACRO, 3, &bound, &Default::default()),
             SlotResolve::Action(ACTION_KIND_SPELL, 133),
             "from here down the macro IS the Fireball slot"
         );
         assert_eq!(
-            resolve_through_macro(ACTION_KIND_MACRO, 4, &bound),
+            resolve_through_macro(ACTION_KIND_MACRO, 4, &bound, &Default::default()),
             SlotResolve::BareMacro,
             "a macro that casts nothing is usable, with no cooldown, no range"
         );
         assert_eq!(
-            resolve_through_macro(ACTION_KIND_MACRO, 5, &bound),
+            resolve_through_macro(ACTION_KIND_MACRO, 5, &bound, &Default::default()),
             SlotResolve::Dead,
             "a /cast of an unknown spell is the reference's -1: grey"
         );
         assert_eq!(
-            resolve_through_macro(ACTION_KIND_MACRO, 6, &bound),
+            resolve_through_macro(ACTION_KIND_MACRO, 6, &bound, &Default::default()),
             SlotResolve::Dead,
             "a slot whose macro no longer exists: grey"
         );
         assert_eq!(
-            resolve_through_macro(ACTION_KIND_SPELL, 133, &bound),
+            resolve_through_macro(ACTION_KIND_SPELL, 133, &bound, &Default::default()),
             SlotResolve::Action(ACTION_KIND_SPELL, 133)
         );
         assert_eq!(
-            resolve_through_macro(ACTION_KIND_ITEM, 117, &bound),
+            resolve_through_macro(ACTION_KIND_ITEM, 117, &bound, &Default::default()),
             SlotResolve::Action(ACTION_KIND_ITEM, 117)
+        );
+    }
+
+    #[test]
+    fn a_crate_display_stands_in_for_the_bound_spell() {
+        use crate::ext::{ExtMacroDisplay, MacroShow};
+        use crate::ui_macro::BoundSpell;
+        use benilla_protocol::messages::ACTION_KIND_MACRO;
+
+        let mut bound = crate::ui_macro::MacroBoundSpells::default();
+        bound.0.insert(3, BoundSpell::Spell(133));
+        bound.0.insert(4, BoundSpell::Spell(133));
+        let mut display = ExtMacroDisplay::default();
+        display.0.insert(1, MacroShow::Item(4338)); // `#showtooltip Mageweave Bandage`
+        display.0.insert(3, MacroShow::Spell(116));
+        display.0.insert(4, MacroShow::Unresolved);
+        assert_eq!(
+            resolve_through_macro(ACTION_KIND_MACRO, 1, &bound, &display),
+            SlotResolve::Action(ACTION_KIND_ITEM, 4338)
+        );
+        assert_eq!(
+            resolve_through_macro(ACTION_KIND_MACRO, 3, &bound, &display),
+            SlotResolve::Action(ACTION_KIND_SPELL, 116)
+        );
+        assert_eq!(
+            resolve_through_macro(ACTION_KIND_MACRO, 4, &bound, &display),
+            SlotResolve::Dead
+        );
+        // A macro the crate does not describe keeps its own bound spell.
+        bound.0.insert(5, BoundSpell::Spell(133));
+        assert_eq!(
+            resolve_through_macro(ACTION_KIND_MACRO, 5, &bound, &display),
+            SlotResolve::Action(ACTION_KIND_SPELL, 133)
         );
     }
 
@@ -454,6 +503,7 @@ mod tests {
         bound.0.insert(2, BoundSpell::Unresolved);
         app.insert_resource(actions)
             .insert_resource(bound)
+            .init_resource::<crate::ext::ExtMacroDisplay>()
             .init_resource::<Cooldowns>()
             .init_resource::<crate::spell::SpellModifiers>()
             .init_resource::<crate::ui_script::UiClock>()
@@ -532,6 +582,7 @@ mod tests {
             };
             app.insert_resource(actions)
                 .insert_resource(crate::ui_macro::MacroBoundSpells::default())
+                .init_resource::<crate::ext::ExtMacroDisplay>()
                 .insert_resource(Spells {
                     catalog: benilla_formats::SpellCatalog::from_displays(
                         [(FIREBALL, fireball)].into_iter().collect(),
@@ -641,6 +692,7 @@ mod tests {
             };
             app.insert_resource(actions)
                 .insert_resource(crate::ui_macro::MacroBoundSpells::default())
+                .init_resource::<crate::ext::ExtMacroDisplay>()
                 .insert_resource(Spells {
                     catalog: benilla_formats::SpellCatalog::from_displays(
                         [(
@@ -785,6 +837,7 @@ mod tests {
             };
             app.insert_resource(actions)
                 .insert_resource(crate::ui_macro::MacroBoundSpells::default())
+                .init_resource::<crate::ext::ExtMacroDisplay>()
                 .insert_resource(Spells {
                     catalog: benilla_formats::SpellCatalog::from_displays(
                         [(FOOD_SPELL, food)].into_iter().collect(),

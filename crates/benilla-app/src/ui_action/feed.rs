@@ -77,7 +77,8 @@ pub(super) fn feed_actions(
     self_q: Query<&ObjectStore, With<SelfPlayer>>,
     objects: crate::net::Objects,
     items: Res<Items>,
-    icons: Option<Res<ItemDisplays>>,
+    // The item icons and a crate's macro display, one parameter for the 16-parameter limit.
+    (icons, display): (Option<Res<ItemDisplays>>, Res<crate::ext::ExtMacroDisplay>),
     sub_classes: Option<Res<crate::ui_items::ItemSubClasses>>,
     name_tables: FailNameTables,
     commands: Res<NetCommands>,
@@ -339,7 +340,11 @@ pub(super) fn feed_actions(
     let template_epoch = items.template_epoch();
     let macro_generation = script.macros_generation();
     let macros_moved = macro_generation != memory.macro_generation;
-    if !memory.resolved || actions.dirty || template_epoch != memory.template_epoch || macros_moved
+    if !memory.resolved
+        || actions.dirty
+        || template_epoch != memory.template_epoch
+        || macros_moved
+        || display.is_changed()
     {
         actions.dirty = false;
         memory.resolved = true;
@@ -385,14 +390,46 @@ pub(super) fn feed_actions(
                     (Some(texture), count, consumable)
                 }
                 // A macro slot shows the macro's own icon (`0x4e6bf9` calls `0x4f0fd0`), never its
-                // bound spell's, though its state follows the bound spell.
-                ACTION_KIND_MACRO => (
-                    macros
+                // bound spell's, though its state follows the bound spell. A crate's display
+                // replaces a question-mark icon with its spell's or item's, and an item's count.
+                ACTION_KIND_MACRO => {
+                    let own = macros
                         .get(button.action as usize)
-                        .and_then(|m| m.texture.clone()),
-                    0,
-                    false,
-                ),
+                        .and_then(|m| m.texture.clone());
+                    let question = own
+                        .as_deref()
+                        .is_some_and(|t| t.eq_ignore_ascii_case(MISSING_ITEM_ICON));
+                    match display.0.get(&button.action).filter(|_| question) {
+                        Some(crate::ext::MacroShow::Spell(id)) => {
+                            let icon = spells.as_ref().and_then(|sp| {
+                                let d = sp.catalog.get(*id)?;
+                                spell_action_icon(
+                                    *id,
+                                    d,
+                                    sp,
+                                    store,
+                                    &objects,
+                                    &items,
+                                    icons.as_deref(),
+                                    &commands,
+                                )
+                            });
+                            (icon.or(own), 0, false)
+                        }
+                        Some(crate::ext::MacroShow::Item(id)) => {
+                            let template = items.template(*id, 0, &commands).cloned();
+                            let texture = template.as_ref().and_then(|t| {
+                                icons.as_ref()?.catalog.get(t.display_info_id)?.icon.clone()
+                            });
+                            let count = store
+                                .map(|s| count_of(&s.0, &objects, *id, InventoryScope::CARRIED))
+                                .unwrap_or(0);
+                            let consumable = template.as_ref().is_some_and(|t| t.is_consumable());
+                            (texture.or(own), count, consumable)
+                        }
+                        _ => (own, 0, false),
+                    }
+                }
                 _ => (None, 0, false),
             };
             fresh.insert(

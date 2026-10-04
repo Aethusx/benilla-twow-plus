@@ -153,6 +153,24 @@ pub enum ExtPlace {
 #[derive(Message, Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ExtAttack(pub Option<u64>);
 
+/// What a crate shows for a macro in place of the bound spell the client derives from its body
+/// (`[rec+0x564]`, `0x4efe00`), by 1-based macro index. The slot's state (usable, cooldown, range,
+/// count, checked) resolves through it as through the bound spell, and a macro whose own icon is
+/// the question mark shows the spell's or the item's icon. Empty, nothing changes.
+#[derive(Resource, Default, Debug, Clone, PartialEq, Eq)]
+pub struct ExtMacroDisplay(pub std::collections::HashMap<u32, MacroShow>);
+
+/// One macro's display, [`ExtMacroDisplay`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MacroShow {
+    Spell(u32),
+    Item(u32),
+    /// A value named nothing the player has: the slot greys, as an unresolved `/cast` does.
+    Unresolved,
+    /// Nothing to show: the macro's own icon, usable, as a macro that casts nothing.
+    Nothing,
+}
+
 /// Ask the server for a template by id, as the client's caches ask on a miss: `CMSG_CREATURE_QUERY`
 /// and `CMSG_GAMEOBJECT_QUERY` with no guid, `CMSG_QUEST_QUERY`. The answer arrives as the usual
 /// session event, which benilla's own caches take too.
@@ -404,6 +422,7 @@ impl Plugin for ExtPlugin {
             .add_message::<ExtCast>()
             .add_message::<ExtAttack>()
             .add_message::<ExtQuery>()
+            .init_resource::<ExtMacroDisplay>()
             .add_message::<ExtRaidMark>()
             .add_message::<ExtCancelAura>()
             .add_message::<ExtSelect>()
