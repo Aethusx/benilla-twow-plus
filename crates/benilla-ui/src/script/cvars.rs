@@ -197,6 +197,13 @@ impl super::UiScript {
         std::mem::take(&mut self.model_mut().cvar_changes)
     }
 
+    /// Drain the `(name, temporary)` marks a crate made since the last call
+    /// ([`super::ext_read::mark_cvar_temporary`]): the host saves a marked row's file value, not
+    /// its live one, until the mark is lifted.
+    pub fn take_cvar_temp_marks(&mut self) -> Vec<(String, bool)> {
+        std::mem::take(&mut self.model_mut().cvar_temp_marks)
+    }
+
     /// Drain the `(name, default)` rows an addon's `RegisterCVar` created since the last call; the
     /// host's registry keeps them beside its own, as the reference's one table does.
     pub fn take_cvar_registrations(&mut self) -> Vec<(String, String)> {

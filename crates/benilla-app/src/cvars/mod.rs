@@ -124,6 +124,9 @@ pub(crate) struct Cvars {
     /// Lowercased names the session owns rather than the player: the env levers, and `gxApi`, the
     /// render backend. Never saved; the file's entry is left as found.
     session_owned: HashSet<String>,
+    /// Lowercased names a crate holds at a temporary value (`C_CVar.SetTempCVar`): like a session
+    /// row, never saved while marked; kept apart so lifting it never frees an env lever.
+    temp_owned: HashSet<String>,
     /// Accepted moves not yet triggered, flushed by [`sync_cvars`], the boot load, the session-edge
     /// fold, or a caller of [`Cvars::take_events`].
     events: Vec<CvarChanged>,
@@ -141,6 +144,7 @@ impl Default for Cvars {
             index: HashMap::with_capacity(REGISTERED.len()),
             file: BTreeMap::new(),
             session_owned: HashSet::new(),
+            temp_owned: HashSet::new(),
             events: Vec::new(),
             outbox: Vec::new(),
             dirty: false,
@@ -201,6 +205,18 @@ impl Cvars {
 
     pub(crate) fn default_of(&self, name: &str) -> Option<&str> {
         self.row(name).map(|r| r.default.as_str())
+    }
+
+    /// A crate's temporary mark on a row, or its lifting ([`Self::temp_owned`]).
+    pub(crate) fn set_temporary(&mut self, name: &str, temporary: bool) {
+        let key = name.to_ascii_lowercase();
+        if temporary {
+            self.temp_owned.insert(key);
+        } else if self.temp_owned.remove(&key) {
+            // The row's live value is the player's again: save it.
+            self.dirty = true;
+            self.last_change = Some(Instant::now());
+        }
     }
 
     pub(crate) fn is_session_owned(&self, name: &str) -> bool {
@@ -472,7 +488,7 @@ impl Cvars {
         let mut out = self.file.clone();
         for row in &self.rows {
             let key = row.name.to_ascii_lowercase();
-            if self.session_owned.contains(&key) {
+            if self.session_owned.contains(&key) || self.temp_owned.contains(&key) {
                 continue;
             }
             // Match any existing entry case-insensitively so a hand-edited spelling doesn't fork.
@@ -711,6 +727,10 @@ pub(crate) fn sync_cvars(
     // first would overwrite the mirror with the older value. Registrations before writes, since an
     // addon declares a row and sets it together.
     let registrations = script.take_cvar_registrations();
+    // A crate's temporary marks before the writes they cover.
+    for (name, temporary) in script.take_cvar_temp_marks() {
+        cvars.set_temporary(&name, temporary);
+    }
     let changes = script.take_cvar_changes();
     if !registrations.is_empty() || !changes.is_empty() {
         for (name, default) in registrations {
@@ -784,14 +804,21 @@ pub(crate) fn fold_dying_vm_cvars(world: &mut World) {
     if !world.contains_resource::<Cvars>() {
         return;
     }
-    let (registrations, changes) = {
+    let (registrations, marks, changes) = {
         let Some(mut script) = world.get_non_send_resource_mut::<UiScript>() else {
             return;
         };
-        (script.take_cvar_registrations(), script.take_cvar_changes())
+        (
+            script.take_cvar_registrations(),
+            script.take_cvar_temp_marks(),
+            script.take_cvar_changes(),
+        )
     };
     let events = {
         let mut cvars = world.resource_mut::<Cvars>();
+        for (name, temporary) in marks {
+            cvars.set_temporary(&name, temporary);
+        }
         for (name, default) in registrations {
             cvars.learn_addon_row(&name, &default);
         }
@@ -2139,6 +2166,29 @@ mod tests {
         cvars.load_file(BTreeMap::from([("farclip".to_string(), "500".to_string())]));
         assert_eq!(cvars.get("farclip"), Some("350"));
         assert!(cvars.is_session_owned("FARCLIP"));
+    }
+
+    /// A crate's temporary value is never saved; once the mark lifts, the row saves as usual, and
+    /// an env lever's ownership is not the mark's to free.
+    #[test]
+    fn a_temporary_row_keeps_the_files_value_until_its_mark_lifts() {
+        let mut cvars = Cvars::default();
+        cvars.load_file(BTreeMap::from([("uiScale".to_string(), "0.8".to_string())]));
+        cvars.set_temporary("UISCALE", true);
+        assert_eq!(cvars.set("uiScale", "1.4"), SetOutcome::Changed);
+        assert_eq!(
+            cvars.compose().get("uiScale").map(String::as_str),
+            Some("0.8")
+        );
+        assert_eq!(cvars.set("uiScale", "0.75"), SetOutcome::Changed);
+        cvars.set_temporary("uiScale", false);
+        assert_eq!(
+            cvars.compose().get("uiScale").map(String::as_str),
+            Some("0.75")
+        );
+        cvars.own_for_session("farclip", None);
+        cvars.set_temporary("farclip", false);
+        assert!(cvars.is_session_owned("farclip"));
     }
 
     /// The camera reads `gxMultisample` once at spawn, so the file must be applied inside

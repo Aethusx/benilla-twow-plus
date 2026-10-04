@@ -413,3 +413,24 @@ pub fn send_mail_item(lua: &Lua) -> Option<(u32, Option<String>)> {
     let it = model.mail_send_item.as_ref()?;
     Some((it.item_id, it.link.clone()))
 }
+
+/// A CVar as the registry holds it, `(value, default, read_only)`; `None` for an unknown name,
+/// with no warning (a predicate's question, not a script's mistake).
+pub fn cvar(lua: &Lua, name: &str) -> Option<(String, String, bool)> {
+    let model = lua.app_data_ref::<Model>()?;
+    let key = name.to_ascii_lowercase();
+    let slot = model.cvars.get(&key)?;
+    Some((
+        slot.value.clone(),
+        slot.default.clone(),
+        model.cvars_read_only.contains(&key),
+    ))
+}
+
+/// Mark a CVar's value as this session's alone, or lift the mark: the host keeps saving the value
+/// the file holds, as a session-owned row, while the mark stands.
+pub fn mark_cvar_temporary(lua: &Lua, name: &str, temporary: bool) {
+    if let Some(mut model) = lua.app_data_mut::<Model>() {
+        model.cvar_temp_marks.push((name.to_string(), temporary));
+    }
+}

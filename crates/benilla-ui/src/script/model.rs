@@ -409,6 +409,8 @@ pub(crate) struct Model {
     pub(crate) cvar_changes: Vec<(String, String)>,
     /// `(name, default)` per addon `RegisterCVar` that created a slot.
     pub(crate) cvar_registrations: Vec<(String, String)>,
+    /// `(name, temporary)` per crate mark: a temporary value is the session's, never saved.
+    pub(crate) cvar_temp_marks: Vec<(String, bool)>,
     pub(crate) cvars_warned: HashSet<String>,
     /// The lowercased names a Lua `SetCVar` refuses, the reference's flag bit2 (`rec+0x1c & 4`,
     /// `CVar::SetReadOnly 0x63e030`). Kept beside the rows, so a host re-seed never clears it.
@@ -1231,6 +1233,7 @@ impl Model {
             cvars: HashMap::new(),
             cvars_saved_base: HashMap::new(),
             cvar_changes: Vec::new(),
+            cvar_temp_marks: Vec::new(),
             cvar_registrations: Vec::new(),
             cvars_warned: HashSet::new(),
             cvars_read_only: HashSet::new(),
