@@ -39,6 +39,7 @@ pub(crate) mod misc;
 mod nameplate;
 mod playerinfo;
 pub(crate) mod showtooltip;
+pub(crate) mod sound;
 pub(crate) mod spell;
 pub(crate) mod targeting;
 pub(crate) mod time;
@@ -205,6 +206,7 @@ pub fn install(ca: &Ca, script: &mut UiScript) {
             faction::install(&api)?;
             friends::install(&api)?;
             map::install(&api)?;
+            sound::install(&api)?;
             unit::install(&api)?;
             Ok(api.private)
         })();

@@ -74,6 +74,8 @@ pub struct State {
     pub(crate) totems: lua::totem::Totems,
     /// `C_CVar`'s temporary values (`CVar::Temp`).
     pub(crate) temp_cvars: Vec<lua::cvar::Temp>,
+    /// `C_Sound`'s plays, mutes and recent files (`Sound::Play`, `Sound::Mute`).
+    pub(crate) sound: lua::sound::Sound,
     /// `C_Map`'s user waypoint (`Map::Waypoint`), kept across a UI reload.
     pub(crate) waypoint: Option<lua::map::Waypoint>,
     /// `#showtooltip` / `#show` macros (`Macro::ShowTooltip`).
@@ -256,6 +258,7 @@ fn frame(
     mut macro_display: ResMut<benilla_app::ext::ExtMacroDisplay>,
     keys: Option<Res<bevy::input::ButtonInput<bevy::input::keyboard::KeyCode>>>,
     mut ext_tokens: ResMut<ExtUnitTokens>,
+    mut ext_sound: ResMut<benilla_app::ext::ExtSound>,
     mut notes: MessageReader<ExtCastNote>,
     script: Option<NonSendMut<UiScript>>,
 ) {
@@ -348,6 +351,11 @@ fn frame(
         let mut st = ca.lock();
         st.mirror.map_id = map.as_deref().map_or(0, |m| m.0);
         st.mirror.area = point.area();
+        // `SOUNDKIT_FINISHED(handle)` for each opted-in play that ended.
+        let now_ms = ui_now.unwrap_or(0.0) * 1000.0;
+        for token in st.sound.sync(&mut ext_sound, now_ms) {
+            st.emit("SOUNDKIT_FINISHED", vec![ScriptValue::Int(token as i64)]);
+        }
         st.mirror.indoors = (st.mirror.player != 0).then(|| point.interior().is_some());
         st.mirror
             .refresh_sight(|a, b| collision.sight(a, b).is_some(), now);
