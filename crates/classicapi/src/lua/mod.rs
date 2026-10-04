@@ -24,6 +24,7 @@ mod creature;
 pub(crate) mod cvar;
 mod encoding;
 pub(crate) mod equipmentset;
+pub(crate) mod faction;
 mod frame;
 mod gossip;
 mod info;
@@ -199,6 +200,7 @@ pub fn install(ca: &Ca, script: &mut UiScript) {
             totem::install(&api)?;
             targeting::install(&api)?;
             gossip::install(&api)?;
+            faction::install(&api)?;
             unit::install(&api)?;
             Ok(api.private)
         })();

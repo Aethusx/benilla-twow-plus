@@ -64,6 +64,8 @@ pub struct State {
     pub(crate) modifiers: u8,
     /// The creature, gameobject and quest records and their loads (`Cache::QueryLoad`).
     pub templates: templates::Templates,
+    /// The reputation diff behind `FACTION_STANDING_CHANGED` (`Faction::StandingChanged`).
+    pub(crate) faction_watch: lua::faction::Watch,
     /// The nearest and directional target asks (`Target::Nearest`).
     pub(crate) targeting: lua::targeting::Targeting,
     /// The totem bar (`Totem::Tracker`).
@@ -470,6 +472,15 @@ fn frame(
     }
     lua::showtooltip::tick(script.lua(), &ca, &mut macro_display, now);
     lua::cvar::tick(script.lua(), &ca);
+    let faction_events = {
+        let mut watch = std::mem::take(&mut ca.lock().faction_watch);
+        let events = watch.tick(script.lua());
+        ca.lock().faction_watch = watch;
+        events
+    };
+    for (name, args) in faction_events {
+        script.queue_event(name, args);
+    }
     for slot in totem_updates {
         script.queue_event(
             "PLAYER_TOTEM_UPDATE",
