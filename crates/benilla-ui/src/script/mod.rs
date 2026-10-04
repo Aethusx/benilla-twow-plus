@@ -235,7 +235,7 @@ pub use quest::{
 };
 pub use quest_log::{QuestLogDetail, QuestLogEntryView, QuestLogObjectiveView, QuestLogState};
 pub(crate) use region::{apply_font_parts, implicit_creation_anchor_lua};
-pub use reputation::{FactionEntry, ReputationSend, ReputationState};
+pub use reputation::{FactionEntry, ReputationSend, ReputationState, VisibleRow};
 pub use session::SessionRequest;
 pub use shapeshift::ShapeshiftFormView;
 pub(crate) use simplehtml::{

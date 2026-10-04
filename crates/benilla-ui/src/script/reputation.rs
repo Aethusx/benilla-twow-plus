@@ -212,12 +212,79 @@ fn entry_at(model: &Model, index: usize) -> Option<&FactionEntry> {
     }
 }
 
-fn entry_at_mut(model: &mut Model, index: usize) -> Option<&mut FactionEntry> {
-    let row = *rows(model).get(index.checked_sub(1)?)?;
-    match row {
-        Row::Entry(ei) => model.reputation.entries.get_mut(ei),
-        Row::Header(_) => None,
+/// `FactionToggleAtWar`'s body by slot: flip the bit and queue the send (`0x4d6950` writes
+/// locally first, and nothing acks it); a faction that may not toggle is left alone.
+pub(super) fn toggle_at_war(model: &mut Model, slot: u32) {
+    let Some(e) = model
+        .reputation
+        .entries
+        .iter_mut()
+        .find(|e| e.rep_list_id == slot)
+    else {
+        return;
+    };
+    if !e.can_toggle_at_war {
+        return;
     }
+    e.at_war = !e.at_war;
+    let send = ReputationSend::AtWar {
+        rep_list_id: slot,
+        at_war: e.at_war,
+    };
+    model.reputation_sends.push(send);
+}
+
+/// `SetFactionInactive` / `SetFactionActive`'s body by slot: the local flip, the send, and the
+/// regroup under or out of "Inactive" (`0x4d69b0` calls `0x4d5c40`).
+pub(super) fn set_inactive(model: &mut Model, slot: u32, inactive: bool) {
+    let Some(e) = model
+        .reputation
+        .entries
+        .iter_mut()
+        .find(|e| e.rep_list_id == slot)
+    else {
+        return;
+    };
+    e.inactive = inactive;
+    model.reputation_sends.push(ReputationSend::Inactive {
+        rep_list_id: slot,
+        inactive,
+    });
+    let groups = build_groups(&model.reputation.entries);
+    model.reputation_groups = groups;
+}
+
+/// One visible row, as a crate's by-index readers see it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum VisibleRow {
+    /// A header: its `Faction.dbc` id, 0 for the "Other" and "Inactive" buckets, and its fold.
+    Header { faction_id: u32, collapsed: bool },
+    /// A faction bar: its `Faction.dbc` id.
+    Entry(u32),
+}
+
+/// The visible row at a 1-based index.
+pub(super) fn row_at(model: &Model, index: usize) -> Option<VisibleRow> {
+    Some(match *rows(model).get(index.checked_sub(1)?)? {
+        Row::Header(gi) => {
+            let g = &model.reputation_groups[gi];
+            VisibleRow::Header {
+                faction_id: u32::try_from(g.key).unwrap_or(0),
+                collapsed: model.reputation_collapsed.contains(&g.key),
+            }
+        }
+        Row::Entry(ei) => VisibleRow::Entry(model.reputation.entries[ei].faction_id),
+    })
+}
+
+/// Whether a header keyed by this `Faction.dbc` id is folded.
+pub(super) fn header_collapsed(model: &Model, faction_id: u32) -> Option<bool> {
+    let key = i64::from(faction_id);
+    model
+        .reputation_groups
+        .iter()
+        .any(|g| g.key == key)
+        .then(|| model.reputation_collapsed.contains(&key))
 }
 
 /// Fold or unfold by 1-based visible index; `0` or any non-header index acts on every header, the
@@ -381,18 +448,9 @@ pub(super) fn install(lua: &Lua) -> mlua::Result<()> {
         "FactionToggleAtWar",
         lua.create_function(|lua, index: usize| {
             let mut model = lua.app_data_mut::<Model>().expect("model app_data");
-            let Some(e) = entry_at_mut(&mut model, index) else {
-                return Ok(());
-            };
-            if !e.can_toggle_at_war {
-                return Ok(());
+            if let Some(slot) = entry_at(&model, index).map(|e| e.rep_list_id) {
+                toggle_at_war(&mut model, slot);
             }
-            e.at_war = !e.at_war;
-            let send = ReputationSend::AtWar {
-                rep_list_id: e.rep_list_id,
-                at_war: e.at_war,
-            };
-            model.reputation_sends.push(send);
             Ok(())
         })?,
     )?;
@@ -414,17 +472,9 @@ pub(super) fn install(lua: &Lua) -> mlua::Result<()> {
             name,
             lua.create_function(move |lua, index: usize| {
                 let mut model = lua.app_data_mut::<Model>().expect("model app_data");
-                let Some(e) = entry_at_mut(&mut model, index) else {
-                    return Ok(());
-                };
-                e.inactive = inactive;
-                let send = ReputationSend::Inactive {
-                    rep_list_id: e.rep_list_id,
-                    inactive,
-                };
-                model.reputation_sends.push(send);
-                let groups = build_groups(&model.reputation.entries);
-                model.reputation_groups = groups;
+                if let Some(slot) = entry_at(&model, index).map(|e| e.rep_list_id) {
+                    set_inactive(&mut model, slot, inactive);
+                }
                 Ok(())
             })?,
         )?;

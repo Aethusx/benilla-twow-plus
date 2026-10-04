@@ -459,3 +459,50 @@ pub fn quest_greeting(lua: &Lua) -> Option<(String, GreetingRows, GreetingRows)>
         zip(&q.available_titles, &q.available_quests),
     ))
 }
+
+/// The reputation snapshot: every faction the player has a slot for, and the watched slot.
+pub fn reputation(lua: &Lua) -> Option<super::ReputationState> {
+    Some(lua.app_data_ref::<Model>()?.reputation.clone())
+}
+
+/// The reputation pane's visible row at a 1-based index.
+pub fn reputation_row(lua: &Lua, index: usize) -> Option<super::reputation::VisibleRow> {
+    let model = lua.app_data_ref::<Model>()?;
+    super::reputation::row_at(&model, index)
+}
+
+/// Whether the header keyed by this `Faction.dbc` id is folded; `None` for no such header.
+pub fn reputation_header_collapsed(lua: &Lua, faction_id: u32) -> Option<bool> {
+    let model = lua.app_data_ref::<Model>()?;
+    super::reputation::header_collapsed(&model, faction_id)
+}
+
+/// `FactionToggleAtWar` for a reputation slot rather than a visible index.
+pub fn toggle_faction_at_war(lua: &Lua, slot: u32) {
+    if let Some(mut model) = lua.app_data_mut::<Model>() {
+        super::reputation::toggle_at_war(&mut model, slot);
+    }
+}
+
+/// `SetFactionInactive` / `SetFactionActive` for a reputation slot.
+pub fn set_faction_inactive(lua: &Lua, slot: u32, inactive: bool) {
+    if let Some(mut model) = lua.app_data_mut::<Model>() {
+        super::reputation::set_inactive(&mut model, slot, inactive);
+    }
+}
+
+/// `SetWatchedFactionIndex` for a reputation slot, `None` to watch nothing.
+pub fn watch_faction(lua: &Lua, slot: Option<u32>) {
+    if let Some(mut model) = lua.app_data_mut::<Model>() {
+        model
+            .reputation_sends
+            .push(super::ReputationSend::Watch(slot));
+    }
+}
+
+/// `SetSelectedFaction` for a reputation slot, `None` to clear it.
+pub fn select_faction(lua: &Lua, slot: Option<u32>) {
+    if let Some(mut model) = lua.app_data_mut::<Model>() {
+        model.reputation_selected = slot;
+    }
+}
