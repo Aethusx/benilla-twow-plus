@@ -36,6 +36,7 @@ mod nameplate;
 mod playerinfo;
 pub(crate) mod showtooltip;
 pub(crate) mod spell;
+pub(crate) mod targeting;
 pub(crate) mod time;
 pub(crate) mod totem;
 pub(crate) mod unit;
@@ -195,6 +196,7 @@ pub fn install(ca: &Ca, script: &mut UiScript) {
             encoding::install(&api)?;
             cvar::install(&api)?;
             totem::install(&api)?;
+            targeting::install(&api)?;
             unit::install(&api)?;
             Ok(api.private)
         })();

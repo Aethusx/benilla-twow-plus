@@ -64,6 +64,8 @@ pub struct State {
     pub(crate) modifiers: u8,
     /// The creature, gameobject and quest records and their loads (`Cache::QueryLoad`).
     pub templates: templates::Templates,
+    /// The nearest and directional target asks (`Target::Nearest`).
+    pub(crate) targeting: lua::targeting::Targeting,
     /// The totem bar (`Totem::Tracker`).
     pub(crate) totems: lua::totem::Totems,
     /// `C_CVar`'s temporary values (`CVar::Temp`).
@@ -327,6 +329,13 @@ fn frame(
     });
     let (totem_updates, totem_select) =
         ca.with_totems(|t, env| (t.tick(env, now), t.select.take()));
+    let target_pick = {
+        let mut st = ca.lock();
+        let State {
+            targeting, mirror, ..
+        } = &mut *st;
+        targeting.resolve(mirror, &|g, hostile| world.tab_valid(g, hostile), now)
+    };
     lap.mark("cast");
     let mask = keys.as_deref().map_or(0, lua::misc::modifier_mask);
     let (events, cancel, queued, attack, loads, focus_lost) = {
@@ -411,7 +420,7 @@ fn frame(
     }
     casts.write_batch(queued);
     attacks.write_batch(attack);
-    if let Some(guid) = totem_select {
+    for guid in [totem_select, target_pick].into_iter().flatten() {
         selects.write(benilla_app::ext::ExtSelect { guid });
     }
     let (asks, load_results) = loads;
