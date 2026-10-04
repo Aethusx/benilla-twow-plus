@@ -516,3 +516,41 @@ pub fn social(lua: &Lua) -> Option<super::SocialState> {
 pub fn who_to_ui(lua: &Lua) -> bool {
     lua.app_data_ref::<Model>().is_some_and(|m| m.who_to_ui)
 }
+
+/// The world map's displayed sheet, as a crate's map readers name it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum WorldMapSheet {
+    /// The world sheet, continent 0.
+    World,
+    /// A whole continent, by its `WorldMapArea` art folder ("Kalimdor").
+    Continent(String),
+    /// A continent's zone, by its `AreaTable.dbc` id.
+    Zone(u32),
+    /// An instance map, by its `WorldMapArea` row id.
+    Direct(u32),
+}
+
+/// The sheet `WorldMapFrame` shows: the selection `SetMapZoom` and the click handlers write.
+pub fn world_map_sheet(lua: &Lua) -> Option<WorldMapSheet> {
+    let model = lua.app_data_ref::<Model>()?;
+    let map = &model.worldmap;
+    if let Some(row) = map.direct_area {
+        return Some(WorldMapSheet::Direct(row));
+    }
+    let (continent, zone) = map.selection;
+    if continent == 0 {
+        return Some(WorldMapSheet::World);
+    }
+    let c = map.continents.get(continent as usize - 1)?;
+    Some(match zone {
+        0 => WorldMapSheet::Continent(c.map_file.clone()),
+        z => WorldMapSheet::Zone(c.zones.get(z as usize - 1)?.area_id),
+    })
+}
+
+/// `PLAYER_EXPLORED_ZONES_1`'s words, bit n being `AreaTable.dbc` exploreFlag n.
+pub fn explored_zones(lua: &Lua) -> Vec<u32> {
+    lua.app_data_ref::<Model>()
+        .map(|m| m.worldmap.explored.clone())
+        .unwrap_or_default()
+}
