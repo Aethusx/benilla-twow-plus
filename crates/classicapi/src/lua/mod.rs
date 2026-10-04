@@ -21,6 +21,7 @@ mod color;
 mod container;
 mod core;
 mod creature;
+mod encoding;
 pub(crate) mod equipmentset;
 mod frame;
 mod info;
@@ -189,6 +190,7 @@ pub fn install(ca: &Ca, script: &mut UiScript) {
             macro_api::install(&api)?;
             showtooltip::install(&api)?;
             itemscrape::install(&api)?;
+            encoding::install(&api)?;
             unit::install(&api)?;
             Ok(api.private)
         })();

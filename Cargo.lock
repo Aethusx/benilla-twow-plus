@@ -2447,7 +2447,9 @@ dependencies = [
  "benilla-ui",
  "benilla-world",
  "bevy",
+ "flate2",
  "mlua",
+ "serde_json",
 ]
 
 [[package]]

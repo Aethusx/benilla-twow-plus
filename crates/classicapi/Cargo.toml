@@ -20,7 +20,10 @@ benilla-protocol = { path = "../benilla-protocol" }
 benilla-ui = { path = "../benilla-ui" }
 benilla-world = { path = "../benilla-world", default-features = false }
 bevy.workspace = true
+# `C_EncodingUtil`'s Deflate / Zlib / Gzip and JSON, both already in the workspace's tree.
+flate2 = "1.1"
 mlua = { version = "0.11", features = ["lua51", "vendored"] }
+serde_json = "1"
 
 [build-dependencies]
 benilla-buildstamp = { path = "../benilla-buildstamp" }
