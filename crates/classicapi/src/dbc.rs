@@ -95,6 +95,12 @@ impl Dbc {
         Some(self.nth(r))
     }
 
+    /// The record with id `id`, 0 included: `Map.dbc`'s Eastern Kingdoms is id 0, and the
+    /// engine's `MapRecord` indexes its pointer array directly.
+    pub fn row_or_zero(&self, id: u32) -> Option<Row<'_>> {
+        Some(self.nth(*self.by_id.get(&id)?))
+    }
+
     /// The `r`-th record in file order.
     pub fn nth(&self, r: usize) -> Row<'_> {
         Row {
@@ -281,6 +287,11 @@ impl Databases {
     /// A file off the chain, for the tables read whole (`ItemSubClass`'s companions, art).
     pub fn file(&self, path: &str) -> Option<Vec<u8>> {
         self.chain()?.read(path).ok()
+    }
+
+    /// Whether the chain holds a readable `path`, without reading it (`FUN_FILE_EXISTS`).
+    pub fn exists(&self, path: &str) -> bool {
+        self.chain().is_some_and(|c| c.contains(path))
     }
 }
 

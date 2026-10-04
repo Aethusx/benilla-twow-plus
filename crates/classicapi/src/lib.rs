@@ -74,6 +74,8 @@ pub struct State {
     pub(crate) totems: lua::totem::Totems,
     /// `C_CVar`'s temporary values (`CVar::Temp`).
     pub(crate) temp_cvars: Vec<lua::cvar::Temp>,
+    /// `C_Map`'s user waypoint (`Map::Waypoint`), kept across a UI reload.
+    pub(crate) waypoint: Option<lua::map::Waypoint>,
     /// `#showtooltip` / `#show` macros (`Macro::ShowTooltip`).
     pub(crate) showtooltip: lua::showtooltip::ShowTooltip,
     /// The nameplate diff: last frame's `(guid, frame)` pairs and every frame ever announced.
@@ -345,6 +347,7 @@ fn frame(
     let (events, cancel, queued, attack, loads, focus_lost) = {
         let mut st = ca.lock();
         st.mirror.map_id = map.as_deref().map_or(0, |m| m.0);
+        st.mirror.area = point.area();
         st.mirror.indoors = (st.mirror.player != 0).then(|| point.interior().is_some());
         st.mirror
             .refresh_sight(|a, b| collision.sight(a, b).is_some(), now);

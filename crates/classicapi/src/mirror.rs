@@ -254,6 +254,12 @@ pub struct Mirror {
     pub target: u64,
     /// The loaded `Map.dbc` id (`VAR_CURRENT_MAP_ID`).
     pub map_id: u32,
+    /// The `AreaTable.dbc` leaf under the player's feet (`GetAreaID`); `None` before the ground
+    /// tile is resident.
+    pub area: Option<u32>,
+    /// Each group member's zone from the stats packets (`SMSG_PARTY_MEMBER_STATS`'s area), the
+    /// field `FUN_GROUP_MEMBER_STATS_LOOKUP` reads at `OFF_GROUP_MEMBER_AREA_ID`.
+    pub member_zones: HashMap<u64, u32>,
     /// Whether the player stands in a WMO interior; `None` before the player exists.
     pub indoors: Option<bool>,
     /// Line of sight from the player to each unit within 150 yards, traced while a native wants it.

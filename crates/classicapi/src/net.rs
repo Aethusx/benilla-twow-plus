@@ -30,7 +30,17 @@ pub fn register(app: &mut App) {
         .net_handler(K::CreatureName, on_template)
         .net_handler(K::GameObjectInfo, on_template)
         .net_handler(K::QuestTemplate, on_template)
-        .net_handler(K::WhoResults, on_who);
+        .net_handler(K::WhoResults, on_who)
+        .net_handler(K::PartyMemberStats, on_member_stats);
+}
+
+/// `SMSG_PARTY_MEMBER_STATS[_FULL]`: a member's zone, when the packet's mask carries it.
+fn on_member_stats(In(ev): In<SessionEvent>, ca: Res<Ca>) {
+    if let SessionEvent::PartyMemberStats { guid, info, .. } = ev {
+        if let Some(zone) = info.zone {
+            ca.lock().mirror.member_zones.insert(guid, u32::from(zone));
+        }
+    }
 }
 
 /// `SMSG_WHO`: an answer, which may be one of `C_FriendList.SendWhoQueryByName`'s.

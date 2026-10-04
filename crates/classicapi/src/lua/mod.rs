@@ -34,6 +34,7 @@ mod itemscrape;
 pub(crate) mod lossofcontrol;
 pub(crate) mod luasyntax;
 mod macro_api;
+pub(crate) mod map;
 pub(crate) mod misc;
 mod nameplate;
 mod playerinfo;
@@ -203,6 +204,7 @@ pub fn install(ca: &Ca, script: &mut UiScript) {
             gossip::install(&api)?;
             faction::install(&api)?;
             friends::install(&api)?;
+            map::install(&api)?;
             unit::install(&api)?;
             Ok(api.private)
         })();
