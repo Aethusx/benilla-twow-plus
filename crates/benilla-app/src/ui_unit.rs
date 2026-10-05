@@ -590,15 +590,15 @@ pub(crate) fn player_token_guid(
 
 /// The one unit-token resolver, the reference's `0x515970`: case-insensitive compares, then the
 /// object manager; a caller wanting a type tests the resolved unit. [`Selection`] is a parameter
-/// because [`crate::target::SelectCommit`] holds it as `ResMut`. `npc` is recognised but
-/// unresolved here, a quiet nil.
+/// because [`crate::target::SelectCommit`] holds it as `ResMut`.
 #[derive(bevy::ecs::system::SystemParam)]
 pub(crate) struct UnitTokens<'w, 's> {
-    /// `Option`, like the two below: a UI-only harness lacks their plugins; a bare `Res` panics.
+    /// `Option`, like those below: a UI-only harness lacks their plugins; a bare `Res` panics.
     index: Option<Res<'w, crate::net::GuidIndex>>,
     pet: Option<Res<'w, crate::ui_pet::PetBar>>,
     hovered: Option<Res<'w, crate::target::Hovered>>,
     hovered_go: Option<Res<'w, crate::target::HoveredObject>>,
+    interact: Option<Res<'w, crate::ui_session::InteractNpc>>,
     group: Res<'w, crate::ui_party::GroupState>,
     pub(crate) stores: Query<'w, 's, &'static ObjectStore>,
     me: Query<'w, 's, (Entity, &'static Guid), With<SelfPlayer>>,
@@ -652,8 +652,8 @@ impl UnitTokens<'_, '_> {
                 .and_then(|member| self.pet_of(member, true)),
             UnitBase::Raid(row) => self.raid_member(row).and_then(|guid| self.held(guid)),
             UnitBase::Party(row) => self.party_member(row).and_then(|guid| self.held(guid)),
-            // The interaction NPC is unresolved here, a quiet nil.
-            UnitBase::Npc => None,
+            // The interaction NPC's guid, `[0xb4e2d0]` (`0x515c00`).
+            UnitBase::Npc => self.held(self.interact.as_ref()?.1?),
         }
     }
 
@@ -1459,7 +1459,7 @@ fn feed_units(
                 // `ChatFrame.lua:1283-1320` reads them; missing gains are zeros, since stock's
                 // `if ( argN > 0 )` raises on nil.
                 let (info, talent_points) = sink.chat.take_level_up_gains(level).unzip();
-                let gain = |f: fn(&benilla_protocol::messages::LevelUpInfo) -> u32| {
+                let gain = |f: fn(&benilla_protocol::messages::LevelUpInfo) -> i32| {
                     ScriptValue::Int(i64::from(info.as_ref().map_or(0, f)))
                 };
                 script.fire_event(
@@ -2257,7 +2257,6 @@ mod tests {
                 "targetfoo",
                 "mouseoverx",
                 "raid3targettargetfoo",
-                "npc",
                 "npctarget",
                 "bogus",
                 "",

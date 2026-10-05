@@ -92,7 +92,7 @@ fn description(lua: &Lua, ca: &Ca, id: u32) -> Option<String> {
     let ranges = spells::range_catalog(db);
     let table = spells::table(db)?;
     // What the tokens read off the player, taken under the lock; the strings come after.
-    let (mods, skills, bits) = {
+    let (mods, skills, bits, sex) = {
         let st = ca.lock();
         let family = spellmod::player_family(db, &st.mirror);
         let mods = Mods {
@@ -104,6 +104,8 @@ fn description(lua: &Lua, ca: &Ca, id: u32) -> Option<String> {
             mods,
             skill_values(&st.mirror),
             talents::player_bits(&st.mirror),
+            // `$g`/`$G` branch on `UNIT_FIELD_BYTES_0`'s gender byte (`0x508214`).
+            st.mirror.me().map_or(0, |me| me.gender()),
         )
     };
     let skill = |spell: u32| {
@@ -120,6 +122,7 @@ fn description(lua: &Lua, ca: &Ca, id: u32) -> Option<String> {
         lookup: &lookup,
         mods: Some(&mods),
         unmodified_points: false,
+        gender: &|| sex,
         home_area: &|| None,
         global: &global,
         printf: &printf,

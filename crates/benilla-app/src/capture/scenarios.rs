@@ -53,6 +53,9 @@ pub(super) enum UiFixture {
     /// The world-mouseover tooltip over a seeded unit: the default anchor puts it at the screen's
     /// bottom-right (`GameTooltip.lua:73-77`), never on the hovered model.
     TooltipWorld,
+    /// The world-mouseover tooltip over a seeded ranked player: the same anchor, with the title's
+    /// PvP rank leg ("Sergeant Bob").
+    TooltipRank,
     /// The character window fed through a synthetic self player's stat block and equipped item
     /// guids, with the items in [`crate::items::Items`].
     Character,
@@ -111,6 +114,10 @@ pub(super) enum UiFixture {
     /// `water-noon` camera). Deep water is opaque (`WATER_DEEP_ALPHA` 1.0), so a name sorted before
     /// the liquid is painted out; it must read at full strength.
     NameWater,
+    /// The ranked player's overhead name line: a level-60 human holding honor rank 7 (internal;
+    /// the visual rank 3, "Sergeant") at the fixture's dry subject spot, framed close off the
+    /// `vplates` camera's bearing.
+    NameRank,
     /// One cell of the lighting matrix: a creature or GameObject spawned through the live path at
     /// `at` ([`SubjectKind`], the note above [`SUBJECT_SUN`]).
     Subject {
@@ -711,6 +718,15 @@ pub(super) const ON_DEMAND: &[Scenario] = &[
         minute: 720,
         ui: Some(UiFixture::TooltipWorld),
     },
+    // The same anchor over a ranked player: the tooltip title carries the rank, "Sergeant Bob".
+    Scenario {
+        name: "ui-tooltip-rank",
+        map: Some(MAP_AZEROTH),
+        eye: GROUND_EYE,
+        look: GROUND_LOOK,
+        minute: 720,
+        ui: Some(UiFixture::TooltipRank),
+    },
     Scenario {
         name: "ui-char",
         map: Some(MAP_AZEROTH),
@@ -909,6 +925,16 @@ pub(super) const ON_DEMAND: &[Scenario] = &[
         look: WATER_LOOK,
         minute: 720,
         ui: Some(UiFixture::NameWater),
+    },
+    // The ranked player's name line at the fixture's subject spot, 5 yd out level with it on the
+    // `vplates` camera's horizontal bearing, so the body and its name line fill the frame.
+    Scenario {
+        name: "name-rank",
+        map: Some(MAP_AZEROTH),
+        eye: [-8953.92, -135.53, 85.5],
+        look: [-8949.95, -132.49, 85.5],
+        minute: 720,
+        ui: Some(UiFixture::NameRank),
     },
 ];
 
