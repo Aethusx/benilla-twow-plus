@@ -683,3 +683,9 @@ pub fn xml_template(lua: &Lua, name: &str) -> Option<crate::framexml::Element> {
 pub fn taxi(lua: &Lua) -> Option<super::TaxiUiState> {
     lua.app_data_ref::<Model>()?.taxi.clone()
 }
+
+/// Whether an auctioneer's window is open.
+pub fn auction_open(lua: &Lua) -> bool {
+    lua.app_data_ref::<Model>()
+        .is_some_and(|m| m.auction.is_some())
+}
