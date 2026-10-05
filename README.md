@@ -93,6 +93,31 @@ Turtle WoW servers work from a Turtle WoW 1.18.1 install: benilla sees Turtle's 
 in the install and logs in as its build, 7272, with its Goblin and High Elf races on the create
 screen. `WOW_FLAVOR=turtle` or `WOW_FLAVOR=vanilla` overrides that detection.
 
+### Turtle WoW and the client DLLs
+
+Many 1.12 addons, and most of Turtle WoW's, need a DLL injected into `WoW.exe`. benilla has no
+DLLs to inject, so the popular ones are ported as crates of their own on top of it, each reaching
+the game through benilla's extension seams. benilla itself knows nothing about any of them:
+
+- **[nampower](https://github.com/brues-code/nampower):** the spell queue, its `NP_` CVars, Lua
+  API and events.
+- **[UnitXP Service Pack 3](https://github.com/brues-code/UnitXP_SP3):** `UnitXP(...)`: targeting,
+  line of sight, camera, frame cap, weather and nameplate options.
+- **[SuperWoW](https://github.com/balakethelock/SuperWoW):** guid, mark and owner unit tokens, the
+  extended Lua API, `UNIT_CASTEVENT` and its CVars.
+- **[ClassicAPI](https://github.com/brues-code/ClassicAPI):** the modern `C_*` API backported to
+  1.12 (spells, auras, items, equipment sets, maps, loot, quests, bindings, bag sorting, the swing
+  timer and more), Lua 5.1 compatibility, and its bundled `!!!ClassicAPI` addon.
+
+`benilla-mods` is the launcher with all four loaded; play Turtle WoW with it:
+
+```sh
+WOW_DATA=/path/to/TurtleWoW/Data cargo run --release -p benilla-mods
+```
+
+Each also has a launcher of its own (`benilla-nampower`, `benilla-unitxp`, `benilla-superwow`,
+`benilla-classicapi`).
+
 Settings, screenshots and addons live in `benilla-config/` at the repo root: a 1.12 addon goes in
 `benilla-config/AddOns/`. [`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md) has the rest, from the
 player build to the tests.
@@ -116,6 +141,7 @@ runtime. The few files under `crates/benilla-app/assets/ui/` are our own, not co
 adapters over stock files, and the settings windows and script error log benilla draws itself.
 
 World of Warcraft is a trademark of Blizzard Entertainment, Inc. Our own code is licensed under
-[MIT](LICENSE-MIT) or [Apache 2.0](LICENSE-APACHE), at your option. The two vendored components
+[MIT](LICENSE-MIT) or [Apache 2.0](LICENSE-APACHE), at your option, except `crates/classicapi`, a
+port of GPL-3.0 code, which is GPL-3.0-or-later. The two vendored components
 under `third_party/`, the kira audio engine and a Lua 5.1 patched to the 1.12 client's dialect,
 keep their own upstream licenses, alongside each.
