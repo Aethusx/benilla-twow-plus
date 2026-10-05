@@ -47,6 +47,7 @@ mod nameplate;
 pub(crate) mod playercache;
 mod playerinfo;
 mod quest;
+pub(crate) mod setaction;
 pub(crate) mod showtooltip;
 pub(crate) mod sortbags;
 pub(crate) mod sound;
@@ -233,6 +234,7 @@ pub fn install(ca: &Ca, script: &mut UiScript) {
             xmlutil::install(&api)?;
             atlas::install(&api)?;
             auctionhouse::install(&api)?;
+            setaction::install(&api)?;
             unit::install(&api)?;
             Ok(api.private)
         })();

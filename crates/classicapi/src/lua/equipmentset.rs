@@ -4,9 +4,8 @@
 //! A set is the item guid each paperdoll slot held when it was saved (0 empty, 1 ignored). The
 //! DLL keeps them in a per-character `ClassicAPI_EquipmentSets.txt`; benilla writes nothing into
 //! the install, so the file lives in the character's local state folder,
-//! `benilla-config/saved/<Realm>-<Character>/`, in the DLL's format. Deviation: sets as action-bar
-//! buttons (the 3.3.5 action type `0x20000000 | setID`) are not built; benilla's action bar knows
-//! no such action.
+//! `benilla-config/saved/<Realm>-<Character>/`, in the DLL's format. A set's action-bar buttons
+//! are [`super::setaction`]'s.
 
 use std::path::PathBuf;
 
@@ -311,6 +310,110 @@ fn changed(lua: &Lua) {
     benilla_ui::script::ext_read::fire_event(lua, "EQUIPMENT_SETS_CHANGED", Vec::new());
 }
 
+/// Load `sets` as the character's, saved to `path`.
+#[cfg(test)]
+pub(super) fn seed(ca: &Ca, path: PathBuf, sets: Vec<Set>) {
+    let mut st = ca.lock();
+    st.equipment_sets.path = Some(path);
+    st.equipment_sets.sets = sets;
+}
+
+/// A set's `(id, name, icon)`, the fields its action button shows.
+pub(super) type Face = (u32, String, String);
+
+/// The set with this id.
+pub(super) fn face(lua: &Lua, ca: &Ca, id: u32) -> Option<Face> {
+    with(lua, ca, |s, _| {
+        s.by_id(id).map(|x| (x.id, x.name.clone(), x.icon.clone()))
+    })
+}
+
+/// The set whose button sits on 0-based action slot `slot0`.
+pub(super) fn on_slot(lua: &Lua, ca: &Ca, slot0: i64) -> Option<Face> {
+    with(lua, ca, |s, _| {
+        s.sets
+            .iter()
+            .find(|x| x.action_slots.contains(&slot0))
+            .map(|x| (x.id, x.name.clone(), x.icon.clone()))
+    })
+}
+
+/// `Data::SetActionSlot`: the slot leaves every other set and joins `id`'s (none for 0).
+pub(super) fn set_action_slot(lua: &Lua, ca: &Ca, slot0: i64, id: u32) {
+    with(lua, ca, |s, _| {
+        if s.path.is_none() {
+            return;
+        }
+        let mut changed = false;
+        for set in &mut s.sets {
+            if set.id != id {
+                let before = set.action_slots.len();
+                set.action_slots.retain(|a| *a != slot0);
+                changed |= set.action_slots.len() != before;
+            } else if !set.action_slots.contains(&slot0) {
+                set.action_slots.push(slot0);
+                changed = true;
+            }
+        }
+        if changed {
+            s.persist();
+        }
+    });
+}
+
+/// `Action::Repaint`: `ACTIONBAR_SLOT_CHANGED` for each of these 0-based slots.
+pub(super) fn repaint(lua: &Lua, slots: &[i64]) {
+    for slot0 in slots {
+        benilla_ui::script::ext_read::fire_event(
+            lua,
+            "ACTIONBAR_SLOT_CHANGED",
+            vec![benilla_app::ext::ScriptValue::Int(slot0 + 1)],
+        );
+    }
+}
+
+fn slots_of(lua: &Lua, ca: &Ca, id: u32) -> Vec<i64> {
+    with(lua, ca, |s, _| {
+        s.by_id(id)
+            .map(|x| x.action_slots.clone())
+            .unwrap_or_default()
+    })
+}
+
+/// `Locations::ContainsLockedItems`: an owned item of the set is client-locked; `None` for no
+/// such set.
+pub(super) fn contains_locked(lua: &Lua, ca: &Ca, id: u32) -> mlua::Result<Option<bool>> {
+    let locs = with(lua, ca, |s, m| {
+        s.by_id(id).map(|set| {
+            set.items
+                .iter()
+                .map(|g| find_guid(m, *g))
+                .filter(|l| *l != 0)
+                .collect::<Vec<_>>()
+        })
+    });
+    let Some(locs) = locs else {
+        return Ok(None);
+    };
+    let g = lua.globals();
+    let mut locked = false;
+    for loc in locs {
+        let v: Value = if loc & (LOC_BAGS | LOC_BANK) == 0 {
+            g.get::<mlua::Function>("IsInventoryItemLocked")?
+                .call(loc & 0xFF)?
+        } else if loc & LOC_BANK == 0 {
+            let out: mlua::MultiValue = g
+                .get::<mlua::Function>("GetContainerItemInfo")?
+                .call(((loc >> 8) & 0xFF, loc & 0xFF))?;
+            out.into_iter().nth(2).unwrap_or(Value::Nil)
+        } else {
+            Value::Nil
+        };
+        locked |= crate::lua::truthy(&v);
+    }
+    Ok(Some(locked))
+}
+
 pub(super) fn install(api: &Api) -> mlua::Result<()> {
     api.table("C_EquipmentSet", "CanUseEquipmentSets", |_, ()| Ok(true))?;
 
@@ -520,6 +623,7 @@ pub(super) fn install(api: &Api) -> mlua::Result<()> {
             });
             if saved {
                 changed(lua);
+                repaint(lua, &slots_of(lua, &c, id)); // the icon may have changed
             }
             Ok(())
         },
@@ -550,6 +654,7 @@ pub(super) fn install(api: &Api) -> mlua::Result<()> {
             });
             if renamed {
                 changed(lua);
+                repaint(lua, &slots_of(lua, &c, id)); // buttons show the name
             }
             Ok(())
         },
@@ -566,6 +671,7 @@ pub(super) fn install(api: &Api) -> mlua::Result<()> {
                     "Usage: C_EquipmentSet.DeleteEquipmentSet(setID)",
                 ));
             }
+            let slots = slots_of(lua, &c, id);
             let gone = with(lua, &c, |s, _| {
                 let before = s.sets.len();
                 s.sets.retain(|x| x.id != id);
@@ -577,6 +683,7 @@ pub(super) fn install(api: &Api) -> mlua::Result<()> {
             });
             if gone {
                 changed(lua);
+                repaint(lua, &slots); // `Action::ClearButtons`
             }
             Ok(())
         },
@@ -619,37 +726,9 @@ pub(super) fn install(api: &Api) -> mlua::Result<()> {
     api.table(
         "C_EquipmentSet",
         "EquipmentSetContainsLockedItems",
-        move |lua, v: Value| {
-            let id = set_id(&v);
-            let locs = with(lua, &c, |s, m| {
-                s.by_id(id).map(|set| {
-                    set.items
-                        .iter()
-                        .map(|g| find_guid(m, *g))
-                        .filter(|l| *l != 0)
-                        .collect::<Vec<_>>()
-                })
-            });
-            let Some(locs) = locs else {
-                return Ok(none());
-            };
-            let g = lua.globals();
-            let mut locked = false;
-            for loc in locs {
-                let v: Value = if loc & (LOC_BAGS | LOC_BANK) == 0 {
-                    g.get::<mlua::Function>("IsInventoryItemLocked")?
-                        .call(loc & 0xFF)?
-                } else if loc & LOC_BANK == 0 {
-                    let out: mlua::MultiValue = g
-                        .get::<mlua::Function>("GetContainerItemInfo")?
-                        .call(((loc >> 8) & 0xFF, loc & 0xFF))?;
-                    out.into_iter().nth(2).unwrap_or(Value::Nil)
-                } else {
-                    Value::Nil
-                };
-                locked |= crate::lua::truthy(&v);
-            }
-            locked.into_lua_multi(lua)
+        move |lua, v: Value| match contains_locked(lua, &c, set_id(&v))? {
+            Some(locked) => locked.into_lua_multi(lua),
+            None => Ok(none()),
         },
     )?;
 

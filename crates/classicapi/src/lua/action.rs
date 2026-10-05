@@ -99,14 +99,19 @@ fn bonus_healing(lua: &Lua, ca: &Ca) -> i64 {
 }
 
 pub(super) fn install(api: &Api) -> mlua::Result<()> {
-    // `GetActionInfo(slot)` -> `"spell", id, "spell"`, `"macro", index` or `"item", id`.
-    api.global("GetActionInfo", |lua, v: Value| {
+    // `GetActionInfo(slot)` -> `"spell", id, "spell"`, `"macro", index`, `"item", id` or
+    // `"equipmentset", name`.
+    let c = api.ca.clone();
+    api.global("GetActionInfo", move |lua, v: Value| {
         if !is_number(&v) {
             return Err(mlua::Error::runtime("Usage: GetActionInfo(slot)"));
         }
         let slot = to_int(&v);
         if !(1..=ACTION_SLOTS).contains(&slot) {
             return Value::Nil.into_lua_multi(lua);
+        }
+        if let Some(name) = super::setaction::action_info(lua, &c, slot) {
+            return ("equipmentset", name).into_lua_multi(lua);
         }
         match ext_read::action_slot(lua, slot as u32) {
             Some((KIND_SPELL, id)) if id != 0 => ("spell", id, "spell").into_lua_multi(lua),
@@ -117,8 +122,9 @@ pub(super) fn install(api: &Api) -> mlua::Result<()> {
     })?;
 
     // `GetCursorInfo()`: `"item", id, link`; `"money", copper`; `"spell", slot, book, id`;
-    // `"macro", index`; `"merchant", index`; nothing when empty.
-    api.global("GetCursorInfo", |lua, ()| {
+    // `"macro", index`; `"merchant", index`; `"equipmentset", name`; nothing when empty.
+    let c = api.ca.clone();
+    api.global("GetCursorInfo", move |lua, ()| {
         let spell = |lua: &Lua, id: u32| -> mlua::Result<mlua::MultiValue> {
             let (slot, pet) =
                 super::spell::find_book_slot(lua, i64::from(id)).unwrap_or((0, false));
@@ -137,6 +143,10 @@ pub(super) fn install(api: &Api) -> mlua::Result<()> {
             Some(CursorView::Spell { spell_id, .. }) if spell_id != 0 => spell(lua, spell_id),
             Some(CursorView::Macro(i)) if i != 0 => ("macro", i).into_lua_multi(lua),
             Some(CursorView::Merchant(row)) => ("merchant", row).into_lua_multi(lua),
+            Some(CursorView::Ext { .. }) => match super::setaction::cursor_info(lua, &c) {
+                Some(name) => ("equipmentset", name).into_lua_multi(lua),
+                None => Ok(none()),
+            },
             Some(CursorView::Action { kind, action }) => match kind {
                 KIND_SPELL if action != 0 => spell(lua, action),
                 KIND_MACRO => ("macro", action).into_lua_multi(lua),
