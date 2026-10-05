@@ -33,6 +33,7 @@ fn payload_icon(script: &benilla_ui::script::UiScript, covered: bool) -> Option<
         // Mode 5: the vendor row's icon, which the reference resolves from its `ItemDisplayInfo`
         // id (`0xb4d8ec`).
         CursorPayload::Merchant(m) => m.texture,
+        CursorPayload::Ext(e) => e.texture,
     }
 }
 

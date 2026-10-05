@@ -44,6 +44,18 @@ pub enum CursorPayload {
     StablePet(CursorStablePet),
     /// Mode 2, coins taken off a money frame.
     Money(CursorMoney),
+    /// A payload a crate on top defines (`ext_read::set_cursor_ext`); 1.12 has no such mode. The
+    /// engine shows its icon, raises the action grid and plays the generic grab pair; every engine
+    /// drop refuses it and leaves it held, so only its owner or a clear takes it.
+    Ext(CursorExt),
+}
+
+/// A crate's own cursor payload: its tag, an id in the tag's space, and the icon at the mouse.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CursorExt {
+    pub tag: String,
+    pub id: u32,
+    pub texture: Option<String>,
 }
 
 /// Copper held on the cursor, mode 2 (`[0xb4e2f0]`, set by `PickupPlayerMoney`, `0x48abc0`). The

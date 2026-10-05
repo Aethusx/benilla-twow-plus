@@ -248,6 +248,11 @@ pub enum CursorView {
         kind: u8,
         action: u32,
     },
+    /// A crate's own payload ([`set_cursor_ext`]): its tag and id.
+    Ext {
+        tag: String,
+        id: u32,
+    },
     /// Anything else (a pet action, a stabled pet).
     Other,
 }
@@ -273,8 +278,25 @@ pub fn cursor(lua: &Lua) -> Option<CursorView> {
             kind: a.kind,
             action: a.action,
         },
+        P::Ext(e) => CursorView::Ext {
+            tag: e.tag.clone(),
+            id: e.id,
+        },
         P::PetAction(_) | P::StablePet(_) => CursorView::Other,
     })
+}
+
+/// Put a crate's own payload on the cursor, after clearing what it held as `ClearCursor` does,
+/// with the transition's `CURSOR_UPDATE` and grid event; `None` just clears.
+pub fn set_cursor_ext(lua: &Lua, payload: Option<super::cursor::CursorExt>) {
+    let Some(mut model) = lua.app_data_mut::<Model>() else {
+        return;
+    };
+    super::cursor::clear_cursor(&mut model);
+    if let Some(p) = payload {
+        model.cursor = Some(super::cursor::CursorPayload::Ext(p));
+        super::cursor::queue_cursor_update(&mut model);
+    }
 }
 
 /// Add a method every region answers (frames of every kind, textures, font strings, title

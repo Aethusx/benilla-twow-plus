@@ -392,7 +392,8 @@ fn pickup_container_item(model: &mut super::Model, bag: i64, slot: u32) {
             // Mode 10, a stabled pet, stays held for the stable window.
             | CursorPayload::StablePet(_)
             // Mode 2, money, stays held for a money frame's DropFunc.
-            | CursorPayload::Money(_)),
+            | CursorPayload::Money(_)
+            | CursorPayload::Ext(_)),
         ) => {
             model.cursor = Some(other);
         }

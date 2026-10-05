@@ -73,6 +73,7 @@ pub(crate) fn place_action(model: &mut Model, id: u32) -> bool {
         CursorPayload::StablePet(_) => None,
         CursorPayload::Money(_) => None,
         CursorPayload::Merchant(_) => None,
+        CursorPayload::Ext(_) => None,
     };
     let Some((kind, action, texture)) = placeable else {
         model.cursor = Some(held);
@@ -399,5 +400,47 @@ mod tests {
 
         assert!(s.eval::<bool>("return PlaceAction(4)").unwrap());
         assert_eq!(s.take_action_sets(), vec![(4, 0x8000_0000u32 | 4496)]);
+    }
+
+    #[test]
+    fn a_crate_payload_raises_the_grid_is_refused_by_the_bar_and_clears() {
+        use crate::script::cursor::CursorExt;
+        use crate::script::ext_read::{self, CursorView};
+        let mut s = UiScript::new().unwrap();
+        s.run(
+            r#"
+            shows, hides = 0, 0
+            local f = CreateFrame("Frame")
+            f:RegisterEvent("ACTIONBAR_SHOWGRID")
+            f:RegisterEvent("ACTIONBAR_HIDEGRID")
+            f:SetScript("OnEvent", function()
+                if event == "ACTIONBAR_SHOWGRID" then shows = shows + 1 else hides = hides + 1 end
+            end)
+            "#,
+        )
+        .unwrap();
+        ext_read::set_cursor_ext(
+            s.lua(),
+            Some(CursorExt {
+                tag: "probe".into(),
+                id: 7,
+                texture: Some(r"Interface\Icons\INV_Misc_QuestionMark".into()),
+            }),
+        );
+        s.tick(0.01);
+        assert_eq!(
+            ext_read::cursor(s.lua()),
+            Some(CursorView::Ext {
+                tag: "probe".into(),
+                id: 7
+            })
+        );
+        assert!(!s.eval::<bool>("return PlaceAction(4)").unwrap());
+        assert!(matches!(s.cursor_payload(), Some(CursorPayload::Ext(_))));
+        assert!(s.take_action_sets().is_empty());
+        s.run("ClearCursor()").unwrap();
+        s.tick(0.01);
+        assert!(s.cursor_payload().is_none());
+        assert_eq!(s.eval::<String>("return shows .. hides").unwrap(), "11");
     }
 }

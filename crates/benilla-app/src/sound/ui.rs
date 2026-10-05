@@ -250,6 +250,8 @@ fn play_item_gesture_sounds(
         | CursorPayload::PetAction(_)
         // Mode 10: the stabled-pet grab `0x495010` calls the same generic path.
         | CursorPayload::StablePet(_)
+        // A crate's own payload takes the generic pair.
+        | CursorPayload::Ext(_)
         // Mode 2: money pickup and drop both play `LOOTWINDOWCOINSOUND`, never the generic drop
         // kit (`0x494cfe`/`0x49523a`).
         | CursorPayload::Money(_) => {
