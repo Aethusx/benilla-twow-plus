@@ -665,3 +665,8 @@ pub fn xml_template(lua: &Lua, name: &str) -> Option<crate::framexml::Element> {
         })
         .cloned()
 }
+
+/// The open taxi map, `None` when no flight master's map is open.
+pub fn taxi(lua: &Lua) -> Option<super::TaxiUiState> {
+    lua.app_data_ref::<Model>()?.taxi.clone()
+}

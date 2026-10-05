@@ -46,6 +46,11 @@ pub struct TaxiUiNode {
     /// The hover route's hops as `[src_x, src_y, dest_x, dest_y]` in the same space, for
     /// `GetNumRoutes` and `TaxiGetSrcX` to `TaxiGetDestY`; empty for the current node.
     pub routes: Vec<[f32; 4]>,
+    /// The `TaxiNodes.dbc` id, for a crate's node readers; Lua never sees it.
+    pub node_id: u32,
+    /// The node ids `TakeTaxiNode` would fly through, current first; the current node alone for
+    /// the current node.
+    pub chain: Vec<u32>,
 }
 
 /// The open taxi map: the continent art and the visible nodes.
