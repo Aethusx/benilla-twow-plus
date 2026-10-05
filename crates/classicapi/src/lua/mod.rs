@@ -53,6 +53,7 @@ pub(crate) mod swing;
 pub(crate) mod targeting;
 pub(crate) mod time;
 pub(crate) mod totem;
+mod tradeskill;
 pub(crate) mod unit;
 
 pub(crate) use args::*;
@@ -225,6 +226,7 @@ pub fn install(ca: &Ca, script: &mut UiScript) {
             merchant::install(&api)?;
             playercache::install(&api)?;
             swing::install(&api)?;
+            tradeskill::install(&api)?;
             unit::install(&api)?;
             Ok(api.private)
         })();
