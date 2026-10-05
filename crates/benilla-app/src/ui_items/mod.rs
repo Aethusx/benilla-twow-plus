@@ -145,6 +145,32 @@ fn send_ext_item_moves(
     }
 }
 
+/// A crate's [`crate::ext::ExtItemLock`]s on the pending-operation lock, each change's slots queued
+/// for `ITEM_LOCK_CHANGED`. A crate lock baselines its slot's own item, so it holds until unlocked
+/// or the slot changes.
+fn apply_ext_item_locks(
+    mut locks: MessageReader<crate::ext::ExtItemLock>,
+    mut pending: ResMut<PendingItemOps>,
+    mut changed: ResMut<LockTransitions>,
+) {
+    use crate::ext::ExtItemLock as L;
+    for lock in locks.read() {
+        match *lock {
+            L::Lock {
+                bag,
+                slot,
+                guid,
+                count,
+            } => {
+                pending.add([(bag, slot, guid, count)]);
+                changed.0.push((bag, slot));
+            }
+            L::Unlock(guid) => changed.0.extend(pending.clear_by_guid(guid)),
+            L::UnlockAll => changed.0.extend(pending.clear_all()),
+        }
+    }
+}
+
 /// One inventory refusal off the wire, with the fills of the only two reasons that format one.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct EquipError {
@@ -955,7 +981,8 @@ impl Plugin for UiItemsPlugin {
         net::register(app);
         // The icons come from the equipment renderer's `ItemDisplays`.
         app.add_message::<crate::ext::ExtItemMove>()
-            .add_systems(Update, send_ext_item_moves)
+            .add_message::<crate::ext::ExtItemLock>()
+            .add_systems(Update, (send_ext_item_moves, apply_ext_item_locks))
             .init_resource::<EquipErrors>()
             .init_resource::<PendingItemOps>()
             // The soulbind confirmations' pending records: the client's pending-equip array and
@@ -1378,6 +1405,43 @@ mod ext_move_tests {
                 ]
             ),
             "{sent:?}"
+        );
+    }
+
+    #[test]
+    fn a_crate_lock_holds_until_unlocked_and_reports_its_slots() {
+        use crate::ext::ExtItemLock;
+        use crate::pending_item_ops::{LockTransitions, PendingItemOps};
+        let mut app = App::new();
+        app.init_resource::<PendingItemOps>()
+            .init_resource::<LockTransitions>()
+            .add_message::<ExtItemLock>()
+            .add_systems(Update, super::apply_ext_item_locks);
+        let lock = |slot, guid| ExtItemLock::Lock {
+            bag: 0,
+            slot,
+            guid,
+            count: 1,
+        };
+        app.world_mut().write_message(lock(1, 0x40));
+        app.world_mut().write_message(lock(2, 0x41));
+        app.update();
+        assert!(app.world().resource::<PendingItemOps>().contains(0, 1));
+        assert_eq!(
+            app.world().resource::<LockTransitions>().0,
+            vec![(0, 1), (0, 2)]
+        );
+        app.world_mut().resource_mut::<LockTransitions>().0.clear();
+        app.world_mut().write_message(ExtItemLock::Unlock(0x40));
+        app.update();
+        assert!(!app.world().resource::<PendingItemOps>().contains(0, 1));
+        assert!(app.world().resource::<PendingItemOps>().contains(0, 2));
+        app.world_mut().write_message(ExtItemLock::UnlockAll);
+        app.update();
+        assert!(app.world().resource::<PendingItemOps>().is_empty());
+        assert_eq!(
+            app.world().resource::<LockTransitions>().0,
+            vec![(0, 1), (0, 2)]
         );
     }
 }

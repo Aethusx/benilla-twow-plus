@@ -117,8 +117,9 @@ impl PendingItemOps {
         self.epoch += 1;
     }
 
-    /// Drops every entry: [`Self::clear_by_failure`]'s fallback.
-    fn clear_all(&mut self) -> Vec<(i64, u32)> {
+    /// Drops every entry, returning the unlocked slots: [`Self::clear_by_failure`]'s fallback and a
+    /// crate's unlock-all.
+    pub(crate) fn clear_all(&mut self) -> Vec<(i64, u32)> {
         let mut unlocked: Vec<(i64, u32)> = self
             .entries
             .drain(..)

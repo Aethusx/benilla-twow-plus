@@ -283,6 +283,22 @@ pub struct ExtItemMove {
     pub count: Option<u32>,
 }
 
+/// The client-side item lock (`item+0x314` bit 0) for a crate: lock a bag slot's item as a send
+/// would, until unlocked; unlock an item by guid; unlock everything. Each change fires
+/// `ITEM_LOCK_CHANGED` for the slots it touches. The server knows nothing of these.
+#[derive(Message, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ExtItemLock {
+    /// Lock the item at `(bag, slot)`, with its guid and stack count there now.
+    Lock {
+        bag: i64,
+        slot: u32,
+        guid: u64,
+        count: u32,
+    },
+    Unlock(u64),
+    UnlockAll,
+}
+
 /// Put text on the OS pasteboard, the one the edit boxes' copy and paste chords use.
 #[derive(Message, Clone, Debug, PartialEq, Eq)]
 pub struct ExtClipboard(pub String);
@@ -580,6 +596,7 @@ impl Plugin for ExtPlugin {
             .init_resource::<ExtConsole>()
             .add_message::<ExtClipboard>()
             .add_message::<ExtItemMove>()
+            .add_message::<ExtItemLock>()
             .add_message::<ExtLootSend>()
             .init_resource::<ExtLoot>()
             .configure_sets(
