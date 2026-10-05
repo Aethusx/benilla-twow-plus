@@ -631,3 +631,8 @@ pub fn set_binding_overrides(lua: &Lua, overrides: Vec<(String, String)>) {
 pub fn set_binding_command_runner(lua: &Lua, f: mlua::Function) -> mlua::Result<()> {
     super::keybind::set_command_runner(lua, f)
 }
+
+/// The open vendor window, `None` when no vendor is open.
+pub fn merchant(lua: &Lua) -> Option<super::MerchantState> {
+    lua.app_data_ref::<Model>()?.merchant.clone()
+}
