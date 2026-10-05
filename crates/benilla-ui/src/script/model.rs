@@ -939,6 +939,11 @@ pub(crate) struct Model {
     pub(crate) pending_events: Vec<(String, Vec<ScriptValue>)>,
     /// The last cursor position in UI space (logical px, y-up), behind `GetCursorPosition()`.
     pub(crate) cursor_pos: (f32, f32),
+    /// A crate's `PreClick`/`PostClick` bracket around a button's `OnClick` (off by default).
+    pub(crate) click_bracket: bool,
+    /// The mouse button of the innermost click, double click or mouse press/release dispatch
+    /// running now, for a crate's `GetMouseButtonClicked`; `None` outside one.
+    pub(crate) clicked_button: Option<String>,
 
     /// A `Minimap:PingLocation(x, y)`, drained the same frame: centre-relative offsets in UI units,
     /// `GetCursorPosition`'s space, not the window pixels of the app's minimap geometry.
@@ -1458,6 +1463,8 @@ impl Model {
             worldstate: super::worldstate::WorldStateUiState::default(),
             pending_events: Vec::new(),
             cursor_pos: (0.0, 0.0),
+            click_bracket: false,
+            clicked_button: None,
             minimap_ping_request: None,
             minimap_ping: (0.0, 0.0),
             chat_sends: Vec::new(),

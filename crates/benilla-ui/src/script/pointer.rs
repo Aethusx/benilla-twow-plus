@@ -464,7 +464,7 @@ impl UiScript {
         // the cursor still gets its `OnMouseUp`, so its resize ends.
         let script = if down { "OnMouseDown" } else { "OnMouseUp" };
         if let Some(id) = if down { hit_id } else { captured_id } {
-            if let Err(e) = event::fire_widget_handler(&self.lua, id, script, vec![btn.clone()]) {
+            if let Err(e) = event::fire_clicked(&self.lua, id, script, button, vec![btn.clone()]) {
                 self.push_error(e);
             }
         }
@@ -540,7 +540,7 @@ impl UiScript {
         // the same click sound: its firer `0x779650` is the twin of `OnClick`'s `0x779540` and
         // passes only the button name of the completing release.
         if let Some(id) = double_id {
-            if let Err(e) = event::fire_widget_handler(&self.lua, id, "OnDoubleClick", vec![btn]) {
+            if let Err(e) = event::fire_clicked(&self.lua, id, "OnDoubleClick", button, vec![btn]) {
                 self.push_error(e);
             }
         }

@@ -995,10 +995,20 @@ pub(super) fn click_button(lua: &Lua, id: u32, button: &str, down: bool, scripte
         Ok(s) => Value::String(s),
         Err(_) => return,
     };
-    if let Err(e) = event::fire_widget_handler(lua, id, "OnClick", vec![btn]) {
-        lua.app_data_mut::<Model>()
-            .expect("model app_data")
-            .record_script_error(e.to_string());
+    // A crate's bracket: `PreClick` and `PostClick` around `OnClick`, each fired whether or not
+    // the others are set, all three under the clicked button.
+    let bracket = lua.app_data_ref::<Model>().is_some_and(|m| m.click_bracket);
+    let kinds: &[&str] = if bracket {
+        &["PreClick", "OnClick", "PostClick"]
+    } else {
+        &["OnClick"]
+    };
+    for kind in kinds {
+        if let Err(e) = event::fire_clicked(lua, id, kind, button, vec![btn.clone()]) {
+            lua.app_data_mut::<Model>()
+                .expect("model app_data")
+                .record_script_error(e.to_string());
+        }
     }
     // A nameplate click selects its unit, from the pointer or `Click()` alike (the plate's
     // override `0x7cb910` chains the base), after the handler so an erroring hook cannot eat it. A

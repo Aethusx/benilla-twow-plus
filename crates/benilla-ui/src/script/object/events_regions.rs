@@ -90,9 +90,9 @@ pub(super) fn install(lua: &Lua, m: &Table) -> mlua::Result<()> {
     // reference's tables are per widget type (base `0x76a0d0`; a plain Frame has no `OnClick`).
     m.set(
         "HasScript",
-        lua.create_function(|_, (_this, name): (Table, String)| {
+        lua.create_function(|lua, (_this, name): (Table, String)| {
             Ok(crate::script::binding_abi::flag(
-                SCRIPT_KINDS.iter().any(|k| k.eq_ignore_ascii_case(&name)),
+                script_kind(lua, &name).is_some(),
             ))
         })?,
     )?;
@@ -215,11 +215,23 @@ pub(super) fn install(lua: &Lua, m: &Table) -> mlua::Result<()> {
 /// `OnMessageScrollChanged`, the movie frame's), because an accepted handler that never runs fails
 /// silently. `OnInputLanguageChanged` is accepted and never fired, the reference's own behaviour on
 /// a client with no input-method switch. `OnAttributeChanged` is 2.0's, with no 1.12 slot.
-fn set_script(lua: &Lua, this: &Table, name: &str, func: Option<Function>) -> mlua::Result<()> {
-    let kind = SCRIPT_KINDS
+/// The kind `name` names: one of [`SCRIPT_KINDS`], or a crate's `PreClick`/`PostClick` while its
+/// click bracket is on.
+fn script_kind(lua: &Lua, name: &str) -> Option<&'static str> {
+    SCRIPT_KINDS
         .iter()
         .copied()
         .find(|&k| k.eq_ignore_ascii_case(name))
+        .or_else(|| {
+            let on = lua.app_data_ref::<Model>().is_some_and(|m| m.click_bracket);
+            ["PreClick", "PostClick"]
+                .into_iter()
+                .find(|k| on && k.eq_ignore_ascii_case(name))
+        })
+}
+
+fn set_script(lua: &Lua, this: &Table, name: &str, func: Option<Function>) -> mlua::Result<()> {
+    let kind = script_kind(lua, name)
         .ok_or_else(|| mlua::Error::runtime(format!("SetScript: unsupported script '{name}'")))?;
     let h = frame_handle_of(lua, this)?;
     let id = lua.app_data_mut::<Model>().expect("model").frame_id(h);
@@ -269,13 +281,8 @@ fn set_script(lua: &Lua, this: &Table, name: &str, func: Option<Function>) -> ml
 }
 
 fn get_script(lua: &Lua, this: &Table, name: &str) -> mlua::Result<Value> {
-    let kind = match SCRIPT_KINDS
-        .iter()
-        .copied()
-        .find(|&k| k.eq_ignore_ascii_case(name))
-    {
-        Some(k) => k,
-        None => return Ok(Value::Nil),
+    let Some(kind) = script_kind(lua, name) else {
+        return Ok(Value::Nil);
     };
     let id = decode_id(this)?;
     let scripts: Table = lua.named_registry_value(REG_SCRIPTS)?;

@@ -574,3 +574,16 @@ pub fn mouse_foci(lua: &Lua) -> Vec<u32> {
         .map(|m| super::pointer::mouse_foci(&m))
         .unwrap_or_default()
 }
+
+/// Turn on the `PreClick`/`PostClick` bracket: a Button accepts both scripts, and a click fires
+/// `PreClick`, `OnClick` and `PostClick`, each whether or not the others are set.
+pub fn enable_click_bracket(lua: &Lua) {
+    if let Some(mut m) = lua.app_data_mut::<Model>() {
+        m.click_bracket = true;
+    }
+}
+
+/// The mouse button of the innermost click, double click or press/release handler running now.
+pub fn mouse_button_clicked(lua: &Lua) -> Option<String> {
+    lua.app_data_ref::<Model>()?.clicked_button.clone()
+}

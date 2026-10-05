@@ -83,6 +83,27 @@ pub(super) fn fire_widget_handler(
     fire(lua, id, script, None, extra)
 }
 
+/// [`fire_widget_handler`] for a mouse dispatch: `button` is the clicked button while it runs,
+/// the outer one restored after, so a nested click shadows and then unwinds.
+pub(super) fn fire_clicked(
+    lua: &Lua,
+    id: u32,
+    script: &str,
+    button: &str,
+    extra: Vec<Value>,
+) -> mlua::Result<()> {
+    let saved = lua
+        .app_data_mut::<super::Model>()
+        .expect("model app_data")
+        .clicked_button
+        .replace(button.to_string());
+    let result = fire_widget_handler(lua, id, script, extra);
+    lua.app_data_mut::<super::Model>()
+        .expect("model app_data")
+        .clicked_button = saved;
+    result
+}
+
 /// Drain [`Model::pending_size_changed`], queued by the resolve pass, and fire `OnSizeChanged` for
 /// each, recording errors. It drains once: a size a handler changes fires on the next resolve, as
 /// the reference's `ApplyRect` does, so a handler that grows its own frame cannot spin forever.

@@ -759,3 +759,36 @@ fn every_frame_under_the_cursor_is_listed_topmost_first() {
     assert_eq!(names, ["Board", "Dialog"]);
     assert!(s.errors().is_empty(), "{:?}", s.errors());
 }
+
+/// A crate's click bracket: `PreClick`, `OnClick`, `PostClick` in order, each under the clicked
+/// button, which reads nil outside the dispatch; off, `SetScript("PreClick")` raises.
+#[test]
+fn the_click_bracket_fires_in_order_under_the_clicked_button() {
+    let s = script();
+    assert!(s
+        .run(r#"local b = CreateFrame("Button"); b:SetScript("PreClick", function() end)"#)
+        .is_err());
+    crate::script::ext_read::enable_click_bracket(s.lua());
+    let probe = s
+        .lua()
+        .create_function(|lua, ()| Ok(crate::script::ext_read::mouse_button_clicked(lua)))
+        .unwrap();
+    s.lua().globals().set("Clicked", probe).unwrap();
+    let out: String = s
+        .eval(
+            r#"
+            local log = ""
+            local b = CreateFrame("Button", "Bracket")
+            for _, k in ipairs({ "PreClick", "OnClick", "PostClick" }) do
+              b:SetScript(k, function() log = log .. k .. ":" .. Clicked() .. " " end)
+            end
+            b:Click("RightButton")
+            return log .. tostring(Clicked()) .. tostring(b:HasScript("PostClick"))
+            "#,
+        )
+        .unwrap();
+    assert_eq!(
+        out,
+        "PreClick:RightButton OnClick:RightButton PostClick:RightButton nil1"
+    );
+}
