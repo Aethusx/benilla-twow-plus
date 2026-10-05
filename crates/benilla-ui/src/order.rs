@@ -401,6 +401,32 @@ pub fn hit_test<F: Fn(FrameHandle) -> bool>(
     None
 }
 
+/// Every frame [`hit_test`] would admit, in its probe order: the topmost first.
+pub fn hit_all<F: Fn(FrameHandle) -> bool>(
+    sorted: &[(ZTarget, ZKey)],
+    hits: F,
+) -> Vec<FrameHandle> {
+    let plane = |k: ZKey| k.0 >> LEVEL_SHIFT;
+    let mut out = Vec::new();
+    let mut end = sorted.len();
+    while end > 0 {
+        let p = plane(sorted[end - 1].1);
+        let mut start = end;
+        while start > 0 && plane(sorted[start - 1].1) == p {
+            start -= 1;
+        }
+        for (target, _) in &sorted[start..end] {
+            if let ZTarget::Frame(fh) = *target {
+                if hits(fh) {
+                    out.push(fh);
+                }
+            }
+        }
+        end = start;
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

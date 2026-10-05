@@ -727,3 +727,35 @@ fn a_script_level_change_leaves_the_children_where_they_were() {
         "the children keep their absolute levels"
     );
 }
+
+/// `GetMouseFoci`' list: every frame taking the mouse under the cursor, topmost first, the hover
+/// frame first; a frame that takes no mouse is left out.
+#[test]
+fn every_frame_under_the_cursor_is_listed_topmost_first() {
+    let mut s = board_and_dialog();
+    s.run(
+        r#"
+        Dialog:Show()
+        Dialog:EnableMouse(true)
+        Board:EnableMouse(true)
+        Glass = CreateFrame("Frame", "Glass")
+        Glass:SetPoint("BOTTOMLEFT", 0, 0)
+        Glass:SetWidth(800); Glass:SetHeight(600)
+        "#,
+    )
+    .unwrap();
+    s.resolve();
+    s.mouse_move(300.0, 300.0);
+    let names: Vec<String> = crate::script::ext_read::mouse_foci(s.lua())
+        .into_iter()
+        .map(|id| {
+            let f = crate::script::ext_read::frame_value(s.lua(), id);
+            let mlua::Value::Table(t) = f else {
+                panic!("frame {id}")
+            };
+            mlua::ObjectLike::call_method::<String>(&t, "GetName", ()).unwrap()
+        })
+        .collect();
+    assert_eq!(names, ["Board", "Dialog"]);
+    assert!(s.errors().is_empty(), "{:?}", s.errors());
+}

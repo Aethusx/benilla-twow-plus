@@ -96,22 +96,7 @@ impl UiScript {
         let model = self.model_ref();
         let sorted = order::traversal(&model.arena);
         let scroll_sources = scroll_clip_sources(&model);
-        order::hit_test(&sorted, |fh| {
-            // Mouse-enabled, or over one of the frame's hyperlink spans. The chat frame takes no
-            // mouse (`[+0xcc] = 0`); the reference gives each span a mouse-enabled
-            // `CSimpleHyperlinkButton` child (`0x7a3240`) that routes its scripts to the parent, so
-            // a chat window hits only over a link and drags by its tab, not its body.
-            (model.arena.is_mouse_enabled(fh) || link_span_hit(&model, fh, x, y))
-                // The nameplate's `+0x3c` veto (`0x7cba30`), not its mouse-enabled bit: while a
-                // ground-targeted spell is armed a plate refuses the hit before its rect is
-                // tested, so the reticle is placed through it.
-                && !model.nameplates.vetoes(fh)
-                && model.resolved.get(&fh).is_some_and(|r| {
-                    point_in_rect(inset_rect(*r, model.arena.hit_rect_insets(fh)), x, y)
-                })
-                && effective_clip(&model, &scroll_sources, fh)
-                    .is_none_or(|c| point_in_rect(c, x, y))
-        })
+        order::hit_test(&sorted, |fh| captures(&model, &scroll_sources, fh, x, y))
     }
 
     /// [`Self::hit_test`] over the frames that take the wheel: the same rect and clip rules, gated
@@ -637,4 +622,46 @@ fn inset_rect(r: Rect, [left, right, top, bottom]: [f32; 4]) -> Rect {
         top: r.top - top,
         bottom: (r.bottom + bottom).min(r.top - top),
     }
+}
+
+/// Whether `fh` takes the mouse at `(x, y)`: the hover and click walk's test.
+fn captures(
+    model: &Model,
+    scroll_sources: &std::collections::HashMap<FrameHandle, Rect>,
+    fh: FrameHandle,
+    x: f32,
+    y: f32,
+) -> bool {
+    // Mouse-enabled, or over one of the frame's hyperlink spans. The chat frame takes no
+    // mouse (`[+0xcc] = 0`); the reference gives each span a mouse-enabled
+    // `CSimpleHyperlinkButton` child (`0x7a3240`) that routes its scripts to the parent, so
+    // a chat window hits only over a link and drags by its tab, not its body.
+    (model.arena.is_mouse_enabled(fh) || link_span_hit(model, fh, x, y))
+        // The nameplate's `+0x3c` veto (`0x7cba30`), not its mouse-enabled bit: while a
+        // ground-targeted spell is armed a plate refuses the hit before its rect is
+        // tested, so the reticle is placed through it.
+        && !model.nameplates.vetoes(fh)
+        && model.resolved.get(&fh).is_some_and(|r| {
+            point_in_rect(inset_rect(*r, model.arena.hit_rect_insets(fh)), x, y)
+        })
+        && effective_clip(model, scroll_sources, fh).is_none_or(|c| point_in_rect(c, x, y))
+}
+
+/// `GetMouseFoci`' frames: every frame that takes the mouse under the cursor, topmost first, the
+/// hover frame forced first so `GetMouseFoci()[1] == GetMouseFocus()`.
+pub(super) fn mouse_foci(model: &Model) -> Vec<u32> {
+    let (x, y) = model.cursor_pos;
+    let sorted = order::traversal(&model.arena);
+    let scroll_sources = scroll_clip_sources(model);
+    let focus = model.mouseover.filter(|&h| model.arena.frame(h).is_some());
+    let mut handles: Vec<FrameHandle> = focus.into_iter().collect();
+    handles.extend(
+        order::hit_all(&sorted, |fh| captures(model, &scroll_sources, fh, x, y))
+            .into_iter()
+            .filter(|&h| Some(h) != focus),
+    );
+    handles
+        .into_iter()
+        .filter_map(|h| model.frame_to_id.get(&h).copied())
+        .collect()
 }

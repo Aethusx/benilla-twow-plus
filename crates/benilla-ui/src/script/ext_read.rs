@@ -566,3 +566,11 @@ pub fn quest_log_selection(lua: &Lua) -> u32 {
     lua.app_data_ref::<Model>()
         .map_or(0, |m| m.quest_log_selection)
 }
+
+/// `GetMouseFoci`' frames as ids: every frame taking the mouse under the cursor, topmost first,
+/// the hover frame first.
+pub fn mouse_foci(lua: &Lua) -> Vec<u32> {
+    lua.app_data_ref::<Model>()
+        .map(|m| super::pointer::mouse_foci(&m))
+        .unwrap_or_default()
+}
