@@ -74,6 +74,8 @@ pub struct State {
     pub(crate) totems: lua::totem::Totems,
     /// `C_CVar`'s temporary values (`CVar::Temp`).
     pub(crate) temp_cvars: Vec<lua::cvar::Temp>,
+    /// `C_AuctionHouse.PostItem`'s job (`AuctionHouse::PostItem`).
+    pub(crate) auctionpost: lua::auctionhouse::AuctionPost,
     /// The atlas registry (`Texture::Atlas`).
     pub(crate) atlases: lua::atlas::Atlases,
     /// The swing timers and their range watch (`Combat::Swing`, `Combat::SwingRange`).
@@ -543,6 +545,7 @@ fn frame(
     sync_nameplates(&ca, &mut script);
     lua::merchant::drain(&ca, &mut script);
     lua::playercache::tick(&ca, &mut script, now);
+    lua::auctionhouse::tick(&ca, &mut script, now);
     let named = ca.tokens.lock().named();
     let guids: Vec<u64> = named.iter().map(|(_, g)| *g).collect();
     script.set_extra_unit_guids_for("classicapi", guids);

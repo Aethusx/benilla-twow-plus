@@ -16,6 +16,7 @@ mod action;
 mod addons;
 mod args;
 pub(crate) mod atlas;
+pub(crate) mod auctionhouse;
 mod aura;
 mod baselib;
 pub(crate) mod bindings;
@@ -231,6 +232,7 @@ pub fn install(ca: &Ca, script: &mut UiScript) {
             tradeskill::install(&api)?;
             xmlutil::install(&api)?;
             atlas::install(&api)?;
+            auctionhouse::install(&api)?;
             unit::install(&api)?;
             Ok(api.private)
         })();
