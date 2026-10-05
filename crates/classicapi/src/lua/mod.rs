@@ -31,6 +31,7 @@ mod gossip;
 mod info;
 pub(crate) mod item;
 mod itemscrape;
+pub(crate) mod loot;
 pub(crate) mod lossofcontrol;
 pub(crate) mod luasyntax;
 mod macro_api;
@@ -207,6 +208,7 @@ pub fn install(ca: &Ca, script: &mut UiScript) {
             friends::install(&api)?;
             map::install(&api)?;
             sound::install(&api)?;
+            loot::install(&api)?;
             unit::install(&api)?;
             Ok(api.private)
         })();

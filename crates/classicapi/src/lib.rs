@@ -74,6 +74,8 @@ pub struct State {
     pub(crate) totems: lua::totem::Totems,
     /// `C_CVar`'s temporary values (`CVar::Temp`).
     pub(crate) temp_cvars: Vec<lua::cvar::Temp>,
+    /// `C_Loot`'s sends, walk and pending take, and `C_LootHistory`.
+    pub(crate) loot: lua::loot::Loot,
     /// `C_Sound`'s plays, mutes and recent files (`Sound::Play`, `Sound::Mute`).
     pub(crate) sound: lua::sound::Sound,
     /// `C_Map`'s user waypoint (`Map::Waypoint`), kept across a UI reload.
@@ -244,6 +246,7 @@ struct Inputs<'w, 's> {
     collision: benilla_world::collision::WorldCollision<'w, 's>,
     point: benilla_world::world_point::WorldPoint<'w, 's>,
     map: Option<Res<'w, benilla_world::world_map::CurrentMap>>,
+    ext_loot: Res<'w, benilla_app::ext::ExtLoot>,
 }
 
 /// The frame: mirror the world, then fire the events the net handlers and the natives queued.
@@ -259,6 +262,7 @@ fn frame(
     keys: Option<Res<bevy::input::ButtonInput<bevy::input::keyboard::KeyCode>>>,
     mut ext_tokens: ResMut<ExtUnitTokens>,
     mut ext_sound: ResMut<benilla_app::ext::ExtSound>,
+    mut loot_sends: MessageWriter<benilla_app::ext::ExtLootSend>,
     mut notes: MessageReader<ExtCastNote>,
     script: Option<NonSendMut<UiScript>>,
 ) {
@@ -270,6 +274,7 @@ fn frame(
         collision,
         point,
         map,
+        ext_loot,
     } = inputs;
     let now = Instant::now();
     let mut lap = prof::Lap::new();
@@ -351,6 +356,13 @@ fn frame(
         let mut st = ca.lock();
         st.mirror.map_id = map.as_deref().map_or(0, |m| m.0);
         st.mirror.area = point.area();
+        // `C_Loot`'s walk and pending take; `LOOT_SCAN_COMPLETED` when a walk ends.
+        let State { loot, mirror, .. } = &mut *st;
+        let (sends, walked) = loot.tick(&ext_loot, mirror, now);
+        loot_sends.write_batch(sends);
+        if walked {
+            st.emit("LOOT_SCAN_COMPLETED", vec![]);
+        }
         // `SOUNDKIT_FINISHED(handle)` for each opted-in play that ended.
         let now_ms = ui_now.unwrap_or(0.0) * 1000.0;
         for token in st.sound.sync(&mut ext_sound, now_ms) {

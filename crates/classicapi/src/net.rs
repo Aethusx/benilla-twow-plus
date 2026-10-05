@@ -31,7 +31,28 @@ pub fn register(app: &mut App) {
         .net_handler(K::GameObjectInfo, on_template)
         .net_handler(K::QuestTemplate, on_template)
         .net_handler(K::WhoResults, on_who)
-        .net_handler(K::PartyMemberStats, on_member_stats);
+        .net_handler(K::PartyMemberStats, on_member_stats)
+        .net_handler(K::LootStartRoll, on_loot_roll)
+        .net_handler(K::LootRoll, on_loot_roll)
+        .net_handler(K::LootRollWon, on_loot_roll)
+        .net_handler(K::LootAllPassed, on_loot_roll);
+}
+
+/// The group-roll packets, for `C_LootHistory` (`Loot::History`'s co-hooks).
+fn on_loot_roll(In(ev): In<SessionEvent>, ca: Res<Ca>) {
+    let mut st = ca.lock();
+    let now = st.mirror.ui_time(std::time::Instant::now());
+    let crate::State { loot, mirror, .. } = &mut *st;
+    let fires = match &ev {
+        SessionEvent::LootStartRoll(p) => loot.history.start(p, now),
+        SessionEvent::LootRoll(p) => loot.history.roll(p, mirror, now),
+        SessionEvent::LootRollWon(p) => loot.history.won(p, mirror, now),
+        SessionEvent::LootAllPassed(p) => loot.history.all_passed(p, now),
+        _ => return,
+    };
+    for (name, args) in fires {
+        st.emit(name, args);
+    }
 }
 
 /// `SMSG_PARTY_MEMBER_STATS[_FULL]`: a member's zone, when the packet's mask carries it.
