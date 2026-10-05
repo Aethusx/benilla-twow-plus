@@ -39,6 +39,7 @@ pub(crate) mod map;
 pub(crate) mod misc;
 mod nameplate;
 mod playerinfo;
+mod quest;
 pub(crate) mod showtooltip;
 pub(crate) mod sound;
 pub(crate) mod spell;
@@ -209,6 +210,7 @@ pub fn install(ca: &Ca, script: &mut UiScript) {
             map::install(&api)?;
             sound::install(&api)?;
             loot::install(&api)?;
+            quest::install(&api)?;
             unit::install(&api)?;
             Ok(api.private)
         })();
