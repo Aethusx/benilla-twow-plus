@@ -504,7 +504,10 @@ mod tests {
         assert_eq!(resolved[sh_idx].cost, 110);
         // The crate-facing ids ride the Lua node too.
         assert_eq!((ui[sw_idx].node_id, ui[sw_idx].chain.clone()), (2, vec![2]));
-        assert_eq!((ui[sh_idx].node_id, ui[sh_idx].chain.clone()), (4, vec![2, 4]));
+        assert_eq!(
+            (ui[sh_idx].node_id, ui[sh_idx].chain.clone()),
+            (4, vec![2, 4])
+        );
 
         // Every node known: the Horde-only stops (Grom'gol, Kargath) have no route from Stormwind.
         let all_known = TaxiMask([u32::MAX; 8]);
