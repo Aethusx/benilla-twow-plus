@@ -554,3 +554,15 @@ pub fn explored_zones(lua: &Lua) -> Vec<u32> {
         .map(|m| m.worldmap.explored.clone())
         .unwrap_or_default()
 }
+
+/// The quest log as the interface shows it: its rows in order, headers included, and the quests
+/// folded under collapsed headers.
+pub fn quest_log(lua: &Lua) -> Option<super::QuestLogState> {
+    Some(lua.app_data_ref::<Model>()?.quest_log.clone())
+}
+
+/// `GetQuestLogSelection`: the selected 1-based row, 0 for none.
+pub fn quest_log_selection(lua: &Lua) -> u32 {
+    lua.app_data_ref::<Model>()
+        .map_or(0, |m| m.quest_log_selection)
+}
