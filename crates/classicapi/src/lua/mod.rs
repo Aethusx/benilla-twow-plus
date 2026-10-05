@@ -44,6 +44,7 @@ mod nameplate;
 mod playerinfo;
 mod quest;
 pub(crate) mod showtooltip;
+pub(crate) mod sortbags;
 pub(crate) mod sound;
 pub(crate) mod spell;
 pub(crate) mod targeting;
@@ -217,6 +218,7 @@ pub fn install(ca: &Ca, script: &mut UiScript) {
             console::install(&api)?;
             minor::install(&api)?;
             bindings::install(&api)?;
+            sortbags::install(&api)?;
             unit::install(&api)?;
             Ok(api.private)
         })();

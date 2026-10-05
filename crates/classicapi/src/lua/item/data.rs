@@ -848,7 +848,7 @@ pub(super) fn install(api: &Api) -> mlua::Result<()> {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
 
     #[test]

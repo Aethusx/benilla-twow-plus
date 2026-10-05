@@ -33,7 +33,7 @@ pub fn linear_guid(m: &Mirror, linear: usize) -> u64 {
 }
 
 /// The container object a bag id names: bags 1-4, bank bags 5-10.
-fn bag_object(m: &Mirror, bag: i64) -> Option<&Fields> {
+pub fn bag_object(m: &Mirror, bag: i64) -> Option<&Fields> {
     let linear = match bag {
         1..=4 => INVSLOT_BAG1 - 1 + (bag as usize - 1),
         5..=10 => BANK_BAG_LINEAR_BASE + (bag as usize - 5),

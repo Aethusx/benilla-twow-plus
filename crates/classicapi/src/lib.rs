@@ -74,6 +74,8 @@ pub struct State {
     pub(crate) totems: lua::totem::Totems,
     /// `C_CVar`'s temporary values (`CVar::Temp`).
     pub(crate) temp_cvars: Vec<lua::cvar::Temp>,
+    /// The bag sort in flight (`Container::SortBags`).
+    pub(crate) sorter: lua::sortbags::Sorter,
     /// The override binding layer (`Bindings::Api`).
     pub(crate) overrides: lua::bindings::Overrides,
     /// The mouse buttons held and the clipboard writes (`Input::GlobalMouse`, `Clipboard::Copy`).
@@ -255,6 +257,7 @@ struct Inputs<'w, 's> {
     ext_loot: Res<'w, benilla_app::ext::ExtLoot>,
     mouse: Option<Res<'w, bevy::input::ButtonInput<bevy::input::mouse::MouseButton>>>,
     clipboard: MessageWriter<'w, benilla_app::ext::ExtClipboard>,
+    item_moves: MessageWriter<'w, benilla_app::ext::ExtItemMove>,
 }
 
 /// The frame: mirror the world, then fire the events the net handlers and the natives queued.
@@ -286,6 +289,7 @@ fn frame(
         ext_loot,
         mouse,
         mut clipboard,
+        mut item_moves,
     } = inputs;
     let now = Instant::now();
     let mut lap = prof::Lap::new();
@@ -388,6 +392,12 @@ fn frame(
         for text in std::mem::take(&mut st.input.clipboard) {
             clipboard.write(benilla_app::ext::ExtClipboard(text));
         }
+        // `C_Container.SortBags`' moves, phase two once the merges show.
+        let db = ca.items.clone();
+        let records = |id: u32| db.lock().peek(id);
+        let turtle = st.auras.turtle;
+        let State { sorter, mirror, .. } = &mut *st;
+        item_moves.write_batch(sorter.tick(mirror, &records, turtle, now));
         // `C_Loot`'s walk and pending take; `LOOT_SCAN_COMPLETED` when a walk ends.
         let State { loot, mirror, .. } = &mut *st;
         let (sends, walked) = loot.tick(&ext_loot, mirror, now);
