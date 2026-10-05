@@ -15,6 +15,7 @@
 
 mod area;
 mod overlays;
+mod taxi;
 mod waypoint;
 
 use mlua::{IntoLuaMulti, Lua, MultiValue, Table, Value};
@@ -550,6 +551,7 @@ pub(super) fn install(api: &Api) -> mlua::Result<()> {
         })?;
     }
 
+    taxi::install(api)?;
     waypoint::install(api)
 }
 

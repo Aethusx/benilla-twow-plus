@@ -150,6 +150,20 @@ impl Maps {
         }
     }
 
+    /// `PercentInZone`: world `(x, y)` as 0..100 on the zone's first row with a real rect, `None`
+    /// when the zone has none or the point lies outside it.
+    pub fn percent_in_zone(&self, area: u32, x: f32, y: f32) -> Option<(f64, f64)> {
+        let w = self
+            .areas
+            .iter()
+            .find(|w| w.area_id == area && !w.degenerate())?;
+        let (fx, fy) = (f64::from(x), f64::from(y));
+        if fx < w.bottom || fx > w.top || fy < w.right || fy > w.left {
+            return None;
+        }
+        w.percent(x, y).map(|(px, py)| (px * 100.0, py * 100.0))
+    }
+
     /// `ContinentRowForMapID`: the map's `areaID` 0 row with a real rect, so the zero-rect
     /// "World" row never wins.
     pub fn continent(&self, map_id: i32) -> Option<&Wma> {
