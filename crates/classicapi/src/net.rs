@@ -32,6 +32,7 @@ pub fn register(app: &mut App) {
         .net_handler(K::QuestTemplate, on_template)
         .net_handler(K::WhoResults, on_who)
         .net_handler(K::PartyMemberStats, on_member_stats)
+        .net_handler(K::AttackStart, on_attack_start)
         .net_handler(K::LootStartRoll, on_loot_roll)
         .net_handler(K::LootRoll, on_loot_roll)
         .net_handler(K::LootRollWon, on_loot_roll)
@@ -194,6 +195,27 @@ fn on_spell_go(In(ev): In<SessionEvent>, ca: Res<Ca>) {
     else {
         return;
     };
+    // `Combat::Swing`: our spell's reset, by its `Spell.dbc` flags.
+    if caster != 0 && caster == ca.lock().mirror.player {
+        let flags = crate::spells::table(&ca.db).and_then(|t| {
+            let r = t.row(spell_id)?;
+            use crate::spells::col;
+            let cast = crate::spells::cast_time_ms(&ca.db, &r).max(0) as u32;
+            Some((
+                (
+                    r.u32(col::ATTRIBUTES),
+                    r.u32(col::ATTRIBUTES_EX2),
+                    r.u32(col::INTERRUPT_FLAGS),
+                ),
+                cast,
+            ))
+        });
+        if let Some((flags, cast)) = flags {
+            let mut st = ca.lock();
+            let crate::State { swing, mirror, .. } = &mut *st;
+            swing.on_spell_go(mirror, spell_id, flags, cast, std::time::Instant::now());
+        }
+    }
     ca.with_auras(|auras, env| auras.on_spell_go(env, caster, spell_id, &hits));
     let now = crate::cast::now_ms();
     ca.with_cast(|cast, env| cast.on_spell_go(env, caster, spell_id, now));
@@ -210,10 +232,44 @@ fn on_attacker_state(In(ev): In<SessionEvent>, ca: Res<Ca>) {
     let SessionEvent::AttackerState(a) = ev else {
         return;
     };
+    {
+        // `Combat::Swing`: each melee hand's unhasted weapon delay, for the parry haste.
+        let delays = {
+            let st = ca.lock();
+            [16, 17].map(|slot| {
+                crate::items::equipment_slot(&st.mirror, slot)
+                    .map(|g| crate::items::item_id(&st.mirror, g))
+            })
+        }
+        .map(|e| {
+            e.and_then(|e| ca.items.lock().peek(e))
+                .map_or(crate::lua::swing::UNARMED_MS, |r| r.delay_ms.max(1))
+        });
+        let mut st = ca.lock();
+        let crate::State { swing, mirror, .. } = &mut *st;
+        swing.on_attacker_state(
+            mirror,
+            a.attacker,
+            a.victim,
+            a.hit_info,
+            a.victim_state,
+            delays,
+            std::time::Instant::now(),
+        );
+    }
     if a.damage == 0 || a.attacker == 0 || a.victim == 0 {
         return;
     }
     ca.with_auras(|auras, env| auras.refresh_judgements(env, a.victim, a.attacker));
+}
+
+/// `SMSG_ATTACKSTART`, for `Combat::Swing`'s off-hand reset.
+fn on_attack_start(In(ev): In<SessionEvent>, ca: Res<Ca>) {
+    if let SessionEvent::AttackStart { attacker, victim } = ev {
+        let mut st = ca.lock();
+        let crate::State { swing, mirror, .. } = &mut *st;
+        swing.on_attack_start(mirror, attacker, victim, std::time::Instant::now());
+    }
 }
 
 /// `MSG_CHANNEL_UPDATE`: our channel's pushback shortens each target's aura of it too.

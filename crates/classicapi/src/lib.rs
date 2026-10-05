@@ -74,6 +74,10 @@ pub struct State {
     pub(crate) totems: lua::totem::Totems,
     /// `C_CVar`'s temporary values (`CVar::Temp`).
     pub(crate) temp_cvars: Vec<lua::cvar::Temp>,
+    /// The swing timers and their range watch (`Combat::Swing`, `Combat::SwingRange`).
+    pub(crate) swing: lua::swing::Swing,
+    /// Our running auto-repeat spell, copied each frame for the natives.
+    pub(crate) auto_repeat: Option<u32>,
     /// The persistent name cache (`Player::NameCache`).
     pub(crate) playercache: lua::playercache::PlayerCache,
     /// `C_MerchantFrame`'s junk sells and `C_Item`'s lock changes (`Merchant::Frame`, `Item::Lock`).
@@ -372,12 +376,39 @@ fn frame(
         targeting.resolve(mirror, &|g, hostile| world.tab_valid(g, hostile), now)
     };
     lap.mark("cast");
+    // `Combat::Swing`: the casts we sent, then each hand's range state for the watch.
+    let auto_repeat = view.auto_repeat();
+    let range_states = {
+        let mut st = ca.lock();
+        st.auto_repeat = auto_repeat;
+        for n in notes
+            .iter()
+            .filter(|n| matches!(n.outcome, CastOutcome::Sent))
+        {
+            st.swing.on_sent(n.spell_id, now);
+        }
+        st.swing.any_range_check().then(|| st.mirror.target)
+    }
+    .map(|target| {
+        let target = (target != 0).then_some(target);
+        let attackable = target.is_some_and(|t| world.can_attack(t));
+        [0, 1, 2].map(|hand| lua::swing::evaluate(&ca, hand, target, attackable, auto_repeat))
+    });
     let mask = keys.as_deref().map_or(0, lua::misc::modifier_mask);
     let (events, cancel, queued, attack, loads, focus_lost) = {
         let mut st = ca.lock();
         st.mirror.map_id = map.as_deref().map_or(0, |m| m.0);
         st.mirror.area = point.area();
         st.console.sync(&mut ext_console);
+        // `PLAYER_SWING` per marked hand, `PLAYER_SWING_RANGE_UPDATE` per moved range state.
+        let State { swing, mirror, .. } = &mut *st;
+        let mut fires = swing.fires(mirror, now);
+        if let Some(states) = range_states {
+            fires.extend(swing.range_fires(states));
+        }
+        for (name, args) in fires {
+            st.emit(name, args);
+        }
         // `GLOBAL_MOUSE_DOWN`/`GLOBAL_MOUSE_UP(button)` per edge, UI hit or not.
         let held = mouse.as_deref().map_or(0, |m| {
             use bevy::input::mouse::MouseButton as B;

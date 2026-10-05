@@ -49,6 +49,7 @@ pub(crate) mod showtooltip;
 pub(crate) mod sortbags;
 pub(crate) mod sound;
 pub(crate) mod spell;
+pub(crate) mod swing;
 pub(crate) mod targeting;
 pub(crate) mod time;
 pub(crate) mod totem;
@@ -223,6 +224,7 @@ pub fn install(ca: &Ca, script: &mut UiScript) {
             sortbags::install(&api)?;
             merchant::install(&api)?;
             playercache::install(&api)?;
+            swing::install(&api)?;
             unit::install(&api)?;
             Ok(api.private)
         })();
