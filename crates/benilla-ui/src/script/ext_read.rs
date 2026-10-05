@@ -636,3 +636,32 @@ pub fn set_binding_command_runner(lua: &Lua, f: mlua::Function) -> mlua::Result<
 pub fn merchant(lua: &Lua) -> Option<super::MerchantState> {
     lua.app_data_ref::<Model>()?.merchant.clone()
 }
+
+/// Every registered virtual XML template as `(name, frame type)`, the element tag.
+pub fn xml_templates(lua: &Lua) -> Vec<(String, String)> {
+    let Some(m) = lua.app_data_ref::<Model>() else {
+        return Vec::new();
+    };
+    let templates = m.framexml_templates.borrow();
+    let mut out: Vec<(String, String)> = templates
+        .iter()
+        .map(|(name, e)| (name.clone(), e.tag.clone()))
+        .collect();
+    out.sort();
+    out
+}
+
+/// One registered template by name, matched as `inherits=` resolves it.
+pub fn xml_template(lua: &Lua, name: &str) -> Option<crate::framexml::Element> {
+    let m = lua.app_data_ref::<Model>()?;
+    let templates = m.framexml_templates.borrow();
+    templates
+        .get(name)
+        .or_else(|| {
+            templates
+                .iter()
+                .find(|(k, _)| k.eq_ignore_ascii_case(name))
+                .map(|(_, e)| e)
+        })
+        .cloned()
+}
