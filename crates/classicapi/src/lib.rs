@@ -74,6 +74,8 @@ pub struct State {
     pub(crate) totems: lua::totem::Totems,
     /// `C_CVar`'s temporary values (`CVar::Temp`).
     pub(crate) temp_cvars: Vec<lua::cvar::Temp>,
+    /// `C_MerchantFrame`'s junk sells and `C_Item`'s lock changes (`Merchant::Frame`, `Item::Lock`).
+    pub(crate) merchant: lua::merchant::Merchant,
     /// The bag sort in flight (`Container::SortBags`).
     pub(crate) sorter: lua::sortbags::Sorter,
     /// The override binding layer (`Bindings::Api`).
@@ -258,6 +260,7 @@ struct Inputs<'w, 's> {
     mouse: Option<Res<'w, bevy::input::ButtonInput<bevy::input::mouse::MouseButton>>>,
     clipboard: MessageWriter<'w, benilla_app::ext::ExtClipboard>,
     item_moves: MessageWriter<'w, benilla_app::ext::ExtItemMove>,
+    item_locks: MessageWriter<'w, benilla_app::ext::ExtItemLock>,
 }
 
 /// The frame: mirror the world, then fire the events the net handlers and the natives queued.
@@ -290,6 +293,7 @@ fn frame(
         mouse,
         mut clipboard,
         mut item_moves,
+        mut item_locks,
     } = inputs;
     let now = Instant::now();
     let mut lap = prof::Lap::new();
@@ -398,6 +402,7 @@ fn frame(
         let turtle = st.auras.turtle;
         let State { sorter, mirror, .. } = &mut *st;
         item_moves.write_batch(sorter.tick(mirror, &records, turtle, now));
+        item_locks.write_batch(std::mem::take(&mut st.merchant.locks));
         // `C_Loot`'s walk and pending take; `LOOT_SCAN_COMPLETED` when a walk ends.
         let State { loot, mirror, .. } = &mut *st;
         let (sends, walked) = loot.tick(&ext_loot, mirror, now);
@@ -501,6 +506,7 @@ fn frame(
         script.queue_event("PLAYER_FOCUS_CHANGED", vec![]);
     }
     sync_nameplates(&ca, &mut script);
+    lua::merchant::drain(&ca, &mut script);
     let named = ca.tokens.lock().named();
     let guids: Vec<u64> = named.iter().map(|(_, g)| *g).collect();
     script.set_extra_unit_guids_for("classicapi", guids);

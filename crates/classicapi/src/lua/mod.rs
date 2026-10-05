@@ -38,6 +38,7 @@ pub(crate) mod lossofcontrol;
 pub(crate) mod luasyntax;
 mod macro_api;
 pub(crate) mod map;
+pub(crate) mod merchant;
 pub(crate) mod minor;
 pub(crate) mod misc;
 mod nameplate;
@@ -219,6 +220,7 @@ pub fn install(ca: &Ca, script: &mut UiScript) {
             minor::install(&api)?;
             bindings::install(&api)?;
             sortbags::install(&api)?;
+            merchant::install(&api)?;
             unit::install(&api)?;
             Ok(api.private)
         })();
