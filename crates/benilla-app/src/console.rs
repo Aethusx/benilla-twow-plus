@@ -94,8 +94,42 @@ impl Plugin for ConsolePlugin {
                 "List the CVars, optionally matching a string.",
                 cvarlist,
             )
-            .console_command("help", "List the console commands, or describe one.", help);
+            .console_command("help", "List the console commands, or describe one.", help)
+            .add_systems(Update, list_for_ext);
     }
+}
+
+/// Keeps [`crate::ext::ExtConsole::commands`] the registry and the CVar table, rebuilt when a
+/// count moves (a command registers at build, an addon's `RegisterCVar` adds a row).
+fn list_for_ext(
+    ext: Option<ResMut<crate::ext::ExtConsole>>,
+    table: Res<ConsoleCommands>,
+    cvars: Option<Res<Cvars>>,
+) {
+    let Some(mut ext) = ext else {
+        return;
+    };
+    let n_cvars = cvars.as_ref().map_or(0, |c| c.rows().count());
+    if ext.commands.len() == table.by_key.len() + n_cvars {
+        return;
+    }
+    let commands = table
+        .by_key
+        .values()
+        .map(|c| crate::ext::ExtConsoleCommand {
+            name: c.name.to_string(),
+            help: c.help.to_string(),
+            cvar: false,
+        });
+    let rows = cvars
+        .iter()
+        .flat_map(|c| c.rows())
+        .map(|r| crate::ext::ExtConsoleCommand {
+            name: r.name.clone(),
+            help: String::new(),
+            cvar: true,
+        });
+    ext.commands = commands.chain(rows).collect();
 }
 
 /// Runs one console line, the reference's `ConsoleCommandExecute`: a registered command, else a
@@ -417,5 +451,21 @@ mod tests {
         }
         let mut app = console_app();
         app.console_command("set", "again", nothing);
+    }
+    #[test]
+    fn a_crate_sees_the_commands_then_the_cvars() {
+        let mut app = console_app();
+        app.init_resource::<crate::ext::ExtConsole>();
+        app.update();
+        let ext = app.world().resource::<crate::ext::ExtConsole>();
+        let names: Vec<&str> = ext.commands.iter().map(|c| c.name.as_str()).collect();
+        assert_eq!(
+            &names[..5],
+            ["cvar_default", "cvar_reset", "cvarlist", "help", "set"]
+        );
+        assert!(!ext.commands[3].cvar && ext.commands[3].help.starts_with("List"));
+        let n_cvars = app.world().resource::<Cvars>().rows().count();
+        assert_eq!(ext.commands.len(), 5 + n_cvars);
+        assert!(ext.commands[5..].iter().all(|c| c.cvar));
     }
 }

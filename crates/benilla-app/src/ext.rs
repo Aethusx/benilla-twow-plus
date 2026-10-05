@@ -249,6 +249,27 @@ pub struct ExtSound {
     pub live: std::collections::HashMap<u64, f32>,
 }
 
+/// The console for a crate: every command and CVar it answers, and lines a crate writes to it.
+/// benilla's console has no screen of its own, so a written line prints as system text in chat,
+/// as a command's output does.
+#[derive(Resource, Default)]
+pub struct ExtConsole {
+    /// The registered commands in name order, then the CVars in registration order; rebuilt
+    /// when either count changes.
+    pub commands: Vec<ExtConsoleCommand>,
+    /// Lines to print, drained by benilla.
+    pub echo: Vec<String>,
+}
+
+/// One console entry, [`ExtConsole::commands`].
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ExtConsoleCommand {
+    pub name: String,
+    /// The registered help line; empty for a CVar.
+    pub help: String,
+    pub cvar: bool,
+}
+
 /// The most entries [`ExtSound::opened`] holds; older ones drop.
 pub const EXT_SOUND_LOG_CAP: usize = 256;
 
@@ -539,6 +560,7 @@ impl Plugin for ExtPlugin {
             .init_resource::<NameplateHook>()
             .init_resource::<ExtUnitTokens>()
             .init_resource::<ExtSound>()
+            .init_resource::<ExtConsole>()
             .add_message::<ExtLootSend>()
             .init_resource::<ExtLoot>()
             .configure_sets(

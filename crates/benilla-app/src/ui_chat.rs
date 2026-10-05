@@ -146,6 +146,7 @@ impl Plugin for UiChatPlugin {
                     .in_set(crate::ui_script::UiFeed)
                     .before(feed::feed_chat),
             )
+            .add_systems(Update, print_ext_console.in_set(UiFeed))
             // `RequestTimePlayed()` -> `CMSG_PLAYED_TIME`; `SMSG_PLAYED_TIME` -> `TIME_PLAYED_MSG`.
             .add_systems(Update, feed::played_time_bridge.in_set(UiFeed))
             .add_systems(
@@ -216,5 +217,22 @@ pub(crate) fn end_chat_session(
         for frame in ["ChatFrame1", "ChatFrame2"] {
             crate::ui_script::run_or_warn(script, &format!("{frame}:Clear()"));
         }
+    }
+}
+
+/// A crate's console lines ([`crate::ext::ExtConsole::echo`]), printed as system text, as a
+/// console command's output is.
+fn print_ext_console(ext: Option<ResMut<crate::ext::ExtConsole>>, mut log: ResMut<feed::ChatLog>) {
+    let Some(mut ext) = ext else {
+        return;
+    };
+    if ext.echo.is_empty() {
+        return;
+    }
+    for text in std::mem::take(&mut ext.echo) {
+        log.push_event(event::ChatEvent::text_only(
+            event::ChatEventKind::System,
+            text,
+        ));
     }
 }
