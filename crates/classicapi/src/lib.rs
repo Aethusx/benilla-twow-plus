@@ -74,6 +74,8 @@ pub struct State {
     pub(crate) totems: lua::totem::Totems,
     /// `C_CVar`'s temporary values (`CVar::Temp`).
     pub(crate) temp_cvars: Vec<lua::cvar::Temp>,
+    /// The console's list and queued lines (`Console::Commands`, `Console::Shell`).
+    pub(crate) console: lua::console::Console,
     /// `C_Loot`'s sends, walk and pending take, and `C_LootHistory`.
     pub(crate) loot: lua::loot::Loot,
     /// `C_Sound`'s plays, mutes and recent files (`Sound::Play`, `Sound::Mute`).
@@ -263,6 +265,7 @@ fn frame(
     mut ext_tokens: ResMut<ExtUnitTokens>,
     mut ext_sound: ResMut<benilla_app::ext::ExtSound>,
     mut loot_sends: MessageWriter<benilla_app::ext::ExtLootSend>,
+    mut ext_console: ResMut<benilla_app::ext::ExtConsole>,
     mut notes: MessageReader<ExtCastNote>,
     script: Option<NonSendMut<UiScript>>,
 ) {
@@ -356,6 +359,7 @@ fn frame(
         let mut st = ca.lock();
         st.mirror.map_id = map.as_deref().map_or(0, |m| m.0);
         st.mirror.area = point.area();
+        st.console.sync(&mut ext_console);
         // `C_Loot`'s walk and pending take; `LOOT_SCAN_COMPLETED` when a walk ends.
         let State { loot, mirror, .. } = &mut *st;
         let (sends, walked) = loot.tick(&ext_loot, mirror, now);

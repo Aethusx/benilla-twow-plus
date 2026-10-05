@@ -18,6 +18,7 @@ mod args;
 mod aura;
 mod baselib;
 mod color;
+pub(crate) mod console;
 mod container;
 mod core;
 mod creature;
@@ -211,6 +212,7 @@ pub fn install(ca: &Ca, script: &mut UiScript) {
             sound::install(&api)?;
             loot::install(&api)?;
             quest::install(&api)?;
+            console::install(&api)?;
             unit::install(&api)?;
             Ok(api.private)
         })();
