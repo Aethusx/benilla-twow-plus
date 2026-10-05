@@ -55,6 +55,7 @@ pub(crate) mod time;
 pub(crate) mod totem;
 mod tradeskill;
 pub(crate) mod unit;
+mod xmlutil;
 
 pub(crate) use args::*;
 
@@ -227,6 +228,7 @@ pub fn install(ca: &Ca, script: &mut UiScript) {
             playercache::install(&api)?;
             swing::install(&api)?;
             tradeskill::install(&api)?;
+            xmlutil::install(&api)?;
             unit::install(&api)?;
             Ok(api.private)
         })();
