@@ -74,6 +74,8 @@ pub struct State {
     pub(crate) totems: lua::totem::Totems,
     /// `C_CVar`'s temporary values (`CVar::Temp`).
     pub(crate) temp_cvars: Vec<lua::cvar::Temp>,
+    /// The atlas registry (`Texture::Atlas`).
+    pub(crate) atlases: lua::atlas::Atlases,
     /// The swing timers and their range watch (`Combat::Swing`, `Combat::SwingRange`).
     pub(crate) swing: lua::swing::Swing,
     /// Our running auto-repeat spell, copied each frame for the natives.
