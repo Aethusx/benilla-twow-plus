@@ -619,3 +619,15 @@ pub fn item_usable(lua: &Lua, item_id: u32) -> Option<bool> {
     }
     Some(super::item_stats::item_usable_by_id(&m, item_id))
 }
+
+/// Lay a crate's override layer over the key bindings: `(key, command)` pairs in
+/// `[ALT-][CTRL-][SHIFT-]KEY` spelling that dispatch in place of the key's binding, never stored.
+pub fn set_binding_overrides(lua: &Lua, overrides: Vec<(String, String)>) {
+    super::keybind::set_overrides(lua, overrides);
+}
+
+/// Set a crate's runner for a bound command no `Bindings.xml` declared, called `(command, down)`
+/// and answering whether it ran.
+pub fn set_binding_command_runner(lua: &Lua, f: mlua::Function) -> mlua::Result<()> {
+    super::keybind::set_command_runner(lua, f)
+}

@@ -274,7 +274,7 @@ fn sync_dispatch(script: Option<NonSendMut<UiScript>>, mut dispatch: ResMut<Bind
     }
     *dispatch.seen_generation.get(&script) = Some(generation);
     dispatch.map.clear();
-    for (key, command) in script.binding_keys() {
+    for (key, command) in script.dispatch_keys() {
         match Chord::parse(&key) {
             Some(ch) => {
                 dispatch.map.insert(ch, command);

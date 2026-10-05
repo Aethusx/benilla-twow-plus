@@ -148,6 +148,9 @@ pub(crate) struct KeybindState {
     /// dispatch.
     generation: u64,
     requests: Vec<KeybindRequest>,
+    /// A crate's override layer, `(key, command)` laid over [`Self::live`] for dispatch alone:
+    /// never stored or saved, so clearing it uncovers the binding beneath.
+    overrides: Vec<KeyBinding>,
 }
 
 /// `SetBinding(set, key, command)` on one key list: unbind `key` everywhere, then bind it to the
@@ -358,6 +361,21 @@ impl super::UiScript {
         self.model_mut().keybinds.live.clone()
     }
 
+    /// The keys a press dispatches: [`Self::binding_keys`] with a crate's overrides laid over
+    /// them, an overridden key taking the override's command.
+    pub fn dispatch_keys(&self) -> Vec<KeyBinding> {
+        let model = self.model_ref();
+        let kb = &model.keybinds;
+        let mut keys: Vec<KeyBinding> = kb
+            .live
+            .iter()
+            .filter(|(k, _)| !kb.overrides.iter().any(|(o, _)| o == k))
+            .cloned()
+            .collect();
+        keys.extend(kb.overrides.iter().cloned());
+        keys
+    }
+
     /// The live table as `(command, chords)`: every declared command in registration order, then
     /// any other name a key is bound to, for the save and the tests.
     pub fn keybind_snapshot(&self) -> Vec<(String, Vec<String>)> {
@@ -423,7 +441,12 @@ pub(crate) fn run_command(lua: &Lua, command: &str, down: bool) -> mlua::Result<
         let model = lua.app_data_ref::<Model>().expect("model app_data");
         let kb = &model.keybinds;
         let Some(&i) = kb.by_name.get(&command.to_ascii_uppercase()) else {
-            return Ok(false);
+            drop(model);
+            // A name no `Bindings.xml` declared: a crate's runner may take it.
+            return match lua.named_registry_value::<Value>(REG_COMMAND_RUNNER)? {
+                Value::Function(f) => f.call::<bool>((command, down)),
+                _ => Ok(false),
+            };
         };
         let e = &kb.entries[i];
         if !down && !e.run_on_up {
@@ -437,6 +460,24 @@ pub(crate) fn run_command(lua: &Lua, command: &str, down: bool) -> mlua::Result<
         .and_then(|f| f.call::<()>(()));
     g.set("keystate", Value::Nil)?;
     ran.map(|()| true)
+}
+
+/// The registry slot of a crate's runner for undeclared command names.
+const REG_COMMAND_RUNNER: &str = "__benilla_binding_command_runner";
+
+/// Set a crate's runner for a command name no `Bindings.xml` declared: called `(command, down)`
+/// on each press and release, answering whether it ran.
+pub(crate) fn set_command_runner(lua: &Lua, f: mlua::Function) -> mlua::Result<()> {
+    lua.set_named_registry_value(REG_COMMAND_RUNNER, f)
+}
+
+/// Replace a crate's override layer; the app re-derives dispatch, and `UPDATE_BINDINGS` fires.
+pub(crate) fn set_overrides(lua: &Lua, overrides: Vec<KeyBinding>) {
+    let mut model = lua.app_data_mut::<Model>().expect("model app_data");
+    if model.keybinds.overrides != overrides {
+        model.keybinds.overrides = overrides;
+        model.keybinds.generation += 1;
+    }
 }
 
 /// The binding globals. `GetBinding(i)` answers the row's name and then every key bound to it
@@ -867,6 +908,44 @@ mod tests {
         assert!(
             !rows(&s).contains(&row(&["HEADER_ITUNES_REMOTE"])),
             "the skipped node's header is never read"
+        );
+    }
+
+    /// A crate's override layer covers a key for dispatch alone and clearing it uncovers the
+    /// binding; an undeclared command reaches the crate's runner.
+    #[test]
+    fn an_override_covers_a_key_and_a_runner_takes_undeclared_commands() {
+        let mut s = script();
+        s.seed_binding_set(1, Some(vec![("F".into(), "JUMP".into())]));
+        s.load_binding_set(1);
+        let g0 = s.keybinds_generation();
+        crate::script::ext_read::set_binding_overrides(
+            s.lua(),
+            vec![("F".into(), "SPELL Fireball".into())],
+        );
+        assert!(s.keybinds_generation() > g0);
+        assert_eq!(
+            s.dispatch_keys(),
+            vec![("F".to_string(), "SPELL Fireball".to_string())]
+        );
+        assert_eq!(
+            s.binding_keys(),
+            vec![("F".to_string(), "JUMP".to_string())]
+        );
+        crate::script::ext_read::set_binding_overrides(s.lua(), vec![]);
+        assert_eq!(s.dispatch_keys(), s.binding_keys());
+
+        assert!(!s.execute_binding("SPELL Fireball", true).unwrap());
+        let runner = s
+            .lua()
+            .load(r#"return function(cmd, down) Ran = cmd .. tostring(down); return true end"#)
+            .eval::<mlua::Function>()
+            .unwrap();
+        crate::script::ext_read::set_binding_command_runner(s.lua(), runner).unwrap();
+        assert!(s.execute_binding("SPELL Fireball", true).unwrap());
+        assert_eq!(
+            s.eval::<String>("return Ran").unwrap(),
+            "SPELL Fireballtrue"
         );
     }
 
