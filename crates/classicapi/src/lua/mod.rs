@@ -42,6 +42,7 @@ pub(crate) mod merchant;
 pub(crate) mod minor;
 pub(crate) mod misc;
 mod nameplate;
+pub(crate) mod playercache;
 mod playerinfo;
 mod quest;
 pub(crate) mod showtooltip;
@@ -221,6 +222,7 @@ pub fn install(ca: &Ca, script: &mut UiScript) {
             bindings::install(&api)?;
             sortbags::install(&api)?;
             merchant::install(&api)?;
+            playercache::install(&api)?;
             unit::install(&api)?;
             Ok(api.private)
         })();

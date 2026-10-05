@@ -82,9 +82,16 @@ pub(super) fn install(api: &Api) -> mlua::Result<()> {
         let Some(g) = guid_arg(&v, "Usage: GetPlayerInfoByGUID(\"0x...\")")? else {
             return Ok(MultiValue::new());
         };
+        // The live caches, else the persistent name cache when it is on.
         let found = {
             let st = c.lock();
-            name_of(&st.mirror, g).zip(traits(&st.mirror, g))
+            name_of(&st.mirror, g)
+                .zip(traits(&st.mirror, g))
+                .or_else(|| {
+                    st.playercache
+                        .by_guid(g)
+                        .map(|(name, e)| (name, (e.race as u8, e.class as u8, e.sex as u8)))
+                })
         };
         let Some((name, (race, class, gender))) = found else {
             return Ok(MultiValue::new());
@@ -108,7 +115,19 @@ pub(super) fn install(api: &Api) -> mlua::Result<()> {
         let Some(g) = guid_arg(&v, "Usage: UnitNameFromGUID(\"0x...\")")? else {
             return Ok(MultiValue::new());
         };
-        match name_of(&c.lock().mirror, g) {
+        // The live caches, then the friends list (online or not), then the persistent cache.
+        let live = name_of(&c.lock().mirror, g);
+        let name = live
+            .or_else(|| {
+                benilla_ui::script::ext_read::social(lua)?
+                    .friends
+                    .into_iter()
+                    .find(|f| f.guid == g)
+                    .map(|f| f.name)
+                    .filter(|n| !n.is_empty())
+            })
+            .or_else(|| c.lock().playercache.by_guid(g).map(|p| p.0));
+        match name {
             Some(name) => (name, "").into_lua_multi(lua),
             None => Ok(MultiValue::new()),
         }

@@ -74,6 +74,8 @@ pub struct State {
     pub(crate) totems: lua::totem::Totems,
     /// `C_CVar`'s temporary values (`CVar::Temp`).
     pub(crate) temp_cvars: Vec<lua::cvar::Temp>,
+    /// The persistent name cache (`Player::NameCache`).
+    pub(crate) playercache: lua::playercache::PlayerCache,
     /// `C_MerchantFrame`'s junk sells and `C_Item`'s lock changes (`Merchant::Frame`, `Item::Lock`).
     pub(crate) merchant: lua::merchant::Merchant,
     /// The bag sort in flight (`Container::SortBags`).
@@ -507,6 +509,7 @@ fn frame(
     }
     sync_nameplates(&ca, &mut script);
     lua::merchant::drain(&ca, &mut script);
+    lua::playercache::tick(&ca, &mut script, now);
     let named = ca.tokens.lock().named();
     let guids: Vec<u64> = named.iter().map(|(_, g)| *g).collect();
     script.set_extra_unit_guids_for("classicapi", guids);
