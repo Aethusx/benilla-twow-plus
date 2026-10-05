@@ -345,6 +345,19 @@ pub fn replace_tooltip_method(
     Ok(old)
 }
 
+/// Put `f` in front of (or add) a Texture method, for a crate that backports a later client's
+/// texture API; the method it replaces is returned for `f` to fall through to.
+pub fn replace_texture_method(
+    lua: &Lua,
+    name: &str,
+    f: mlua::Function,
+) -> mlua::Result<Option<mlua::Function>> {
+    let t: mlua::Table = lua.named_registry_value(super::REG_TEXTURE_METHODS)?;
+    let old: Option<mlua::Function> = t.raw_get(name)?;
+    t.raw_set(name, f)?;
+    Ok(old)
+}
+
 /// Make the macro runner treat `#` lines as comments, as 3.3.5's does, where 1.12's sends them on
 /// (a `#showtooltip` line becomes a `/say`).
 pub fn set_macro_skip_comments(lua: &Lua, on: bool) {
