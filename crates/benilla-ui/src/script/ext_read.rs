@@ -608,3 +608,14 @@ pub fn frames_registered_for_event(lua: &Lua, event: &str) -> Vec<u32> {
         .filter_map(|h| m.frame_to_id.get(h).copied())
         .collect()
 }
+
+/// The client's item-usable predicate (`0x5ea930`) for a cached template: level, class, race,
+/// proficiency, skill, spell, honor, city and reputation gates. `None` while the template is
+/// uncached or before the player's requirement state is pushed.
+pub fn item_usable(lua: &Lua, item_id: u32) -> Option<bool> {
+    let m = lua.app_data_ref::<Model>()?;
+    if m.player_req.level == 0 || !m.item_templates.contains_key(&item_id) {
+        return None;
+    }
+    Some(super::item_stats::item_usable_by_id(&m, item_id))
+}
