@@ -1,4 +1,5 @@
-//! `equipmentset/`: `C_EquipmentSet`, gear sets saved per character and worn in one call.
+//! `equipmentset/`: `C_EquipmentSet`, gear sets saved per character and worn in one call, and
+//! `GameTooltip:SetEquipmentSet`.
 //!
 //! A set is the item guid each paperdoll slot held when it was saved (0 empty, 1 ignored). The
 //! DLL keeps them in a per-character `ClassicAPI_EquipmentSets.txt`; benilla writes nothing into
@@ -744,7 +745,111 @@ pub(super) fn install(api: &Api) -> mlua::Result<()> {
         );
         Ok(true)
     })?;
+
+    let c = api.ca.clone();
+    let f = api
+        .lua
+        .create_function(move |lua, (tip, n): (Value, Value)| {
+            const USAGE: &str = "Usage: GameTooltip:SetEquipmentSet(\"setName\")";
+            let (Value::Table(tip), Value::String(n)) = (&tip, &n) else {
+                return Err(mlua::Error::runtime(USAGE));
+            };
+            let name = n.to_string_lossy();
+            let Some(lines) = with(lua, &c, |s, m| {
+                s.by_name(&name).map(|set| tooltip_lines(lua, set, m))
+            }) else {
+                return Ok(());
+            };
+            use mlua::ObjectLike;
+            tip.call_method::<()>("ClearLines", ())?;
+            for (text, (r, g, b)) in lines {
+                tip.call_method::<()>("AddLine", (text, r, g, b))?;
+            }
+            tip.call_method::<()>("Show", ())
+        })?;
+    // A VM without the tooltip methods (a bare test VM) has nothing to extend.
+    let _ = benilla_ui::script::ext_read::replace_tooltip_method(api.lua, "SetEquipmentSet", f);
     Ok(())
+}
+
+type Rgb = (f64, f64, f64);
+const WHITE: Rgb = (1.0, 1.0, 1.0);
+const RED: Rgb = (1.0, 0.0, 0.0);
+
+/// `Tooltip.cpp`'s summary: the name, then the item, worn, carried and ignored counts, then one
+/// `ITEM_MISSING` line per missing item the item cache can name and a count of the rest. The
+/// GlobalStrings keys are the later client's, each with the DLL's fallback where 1.12 lacks it.
+fn tooltip_lines(lua: &Lua, set: &Set, m: &Mirror) -> Vec<(String, Rgb)> {
+    use benilla_ui::strings::{fill, global, Arg};
+    let (mut worn, mut carried, mut ignored, mut missing) = (0i64, 0i64, 0i64, Vec::new());
+    for (i, g) in set.items.iter().enumerate() {
+        match *g {
+            GUID_EMPTY => {}
+            GUID_IGNORED => ignored += 1,
+            g => match find_guid(m, g) {
+                0 => missing.push(set.item_ids[i]),
+                l if l & (LOC_BAGS | LOC_BANK) != 0 => carried += 1,
+                _ => worn += 1,
+            },
+        }
+    }
+    let line = |key: &str, fallback: &str, arg: Arg, color: Rgb| {
+        let t = global(lua, key).unwrap_or_else(|| fallback.into());
+        (fill(&t, &[arg]), color)
+    };
+    let mut out = vec![(set.name.clone(), WHITE)];
+    let total = worn + carried + missing.len() as i64;
+    out.push(line(
+        "ITEMS_VARIABLE_QUANTITY",
+        "%d items",
+        Arg::D(total),
+        WHITE,
+    ));
+    if worn > 0 {
+        out.push(line(
+            "ITEMS_EQUIPPED",
+            "%d equipped",
+            Arg::D(worn),
+            (0.0, 1.0, 0.0),
+        ));
+    }
+    if carried > 0 {
+        out.push(line(
+            "ITEMS_IN_INVENTORY",
+            "%d in inventory",
+            Arg::D(carried),
+            WHITE,
+        ));
+    }
+    if ignored > 0 {
+        out.push(line(
+            "ITEM_SLOTS_IGNORED",
+            "%d slots ignored",
+            Arg::D(ignored),
+            (0.5, 0.5, 0.5),
+        ));
+    }
+    let mut unnamed = 0;
+    for id in missing {
+        let name = (id != 0)
+            .then(|| crate::itemdb::peek(lua, id))
+            .flatten()
+            .map(|r| r.name.clone())
+            .filter(|n| !n.is_empty());
+        match name {
+            Some(n) => out.push(line("ITEM_MISSING", "Missing: %s", Arg::S(&n), RED)),
+            None => unnamed += 1,
+        }
+    }
+    if unnamed > 0 {
+        out.push(line(
+            "CLASSICAPI_EQUIPMENTSET_MISSING",
+            "%d missing",
+            Arg::D(unnamed),
+            RED,
+        ));
+    }
+    out
 }
 
 #[cfg(test)]
@@ -765,5 +870,23 @@ mod tests {
         s.items[3] = GUID_IGNORED;
         let back = parse(&render(&[s.clone()]));
         assert_eq!(back, vec![s]);
+    }
+
+    #[test]
+    fn the_tooltip_counts_missing_and_ignored_items() {
+        let ca = Ca::default();
+        let script = crate::lua::test_support::vm(&ca);
+        let mut s = Set {
+            name: "Tank".into(),
+            ..Set::default()
+        };
+        s.items[0] = 0x4000_0000_0000_0123;
+        s.items[1] = 0x4000_0000_0000_0124;
+        s.items[3] = GUID_IGNORED;
+        let lines: Vec<String> = tooltip_lines(script.lua(), &s, &Mirror::default())
+            .into_iter()
+            .map(|(t, _)| t)
+            .collect();
+        assert_eq!(lines, ["Tank", "2 items", "1 slots ignored", "2 missing"]);
     }
 }
