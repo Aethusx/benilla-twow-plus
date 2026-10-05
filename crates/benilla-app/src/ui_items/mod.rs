@@ -108,6 +108,43 @@ pub(crate) fn wire_pos(bag: i64, slot1: u32) -> Option<(u8, u8)> {
     }
 }
 
+/// A crate's [`crate::ext::ExtItemMove`]s, sent in order with no lock; a move whose ends name no
+/// wire position is dropped.
+fn send_ext_item_moves(
+    mut moves: MessageReader<crate::ext::ExtItemMove>,
+    commands: Res<crate::net::NetCommands>,
+) {
+    use crate::net::ClientCommand as C;
+    for mv in moves.read() {
+        let (Some((sb, ss)), Some((db, ds))) = (
+            wire_pos(mv.src_bag, mv.src_slot),
+            wire_pos(mv.dst_bag, mv.dst_slot),
+        ) else {
+            continue;
+        };
+        let cmd = match mv.count {
+            Some(n) => C::SplitItem {
+                src_bag: sb,
+                src_slot: ss,
+                dst_bag: db,
+                dst_slot: ds,
+                count: n.min(u32::from(u8::MAX)) as u8,
+            },
+            None if sb == BAG_PLAYER_INVENTORY && db == BAG_PLAYER_INVENTORY => C::SwapInvItem {
+                src_slot: ss,
+                dst_slot: ds,
+            },
+            None => C::SwapItem {
+                dst_bag: db,
+                dst_slot: ds,
+                src_bag: sb,
+                src_slot: ss,
+            },
+        };
+        let _ = commands.0.send(cmd);
+    }
+}
+
 /// One inventory refusal off the wire, with the fills of the only two reasons that format one.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct EquipError {
@@ -917,7 +954,9 @@ impl Plugin for UiItemsPlugin {
     fn build(&self, app: &mut App) {
         net::register(app);
         // The icons come from the equipment renderer's `ItemDisplays`.
-        app.init_resource::<EquipErrors>()
+        app.add_message::<crate::ext::ExtItemMove>()
+            .add_systems(Update, send_ext_item_moves)
+            .init_resource::<EquipErrors>()
             .init_resource::<PendingItemOps>()
             // The soulbind confirmations' pending records: the client's pending-equip array and
             // its one bind-on-use cell.
@@ -1284,6 +1323,62 @@ mod tests {
         assert_eq!(wire_pos(EQUIPMENT_BAG, 69), Some((255, 68)), "BankBag6");
         assert_eq!(wire_pos(EQUIPMENT_BAG, 63), None, "the doll-space gap");
         assert_eq!(wire_pos(EQUIPMENT_BAG, 70), None, "past the bank bags");
+    }
+}
+
+/// A crate's direct moves go out as the cursor path's packets would, unlocked and in order.
+#[cfg(test)]
+mod ext_move_tests {
+    use bevy::prelude::*;
+
+    use crate::ext::ExtItemMove;
+    use crate::net::{ClientCommand, NetCommands};
+
+    #[test]
+    fn a_crate_move_sends_the_packet_its_ends_call_for() {
+        let (tx, rx) = crossbeam_channel::unbounded();
+        let mut app = App::new();
+        app.insert_resource(NetCommands(tx))
+            .add_message::<ExtItemMove>()
+            .add_systems(Update, super::send_ext_item_moves);
+        let mv = |src_bag, src_slot, dst_bag, dst_slot, count| ExtItemMove {
+            src_bag,
+            src_slot,
+            dst_bag,
+            dst_slot,
+            count,
+        };
+        app.world_mut().write_message(mv(0, 1, 0, 2, None));
+        app.world_mut().write_message(mv(1, 3, 0, 1, None));
+        app.world_mut().write_message(mv(0, 1, 2, 4, Some(5)));
+        app.world_mut().write_message(mv(0, 99, 0, 1, None));
+        app.update();
+        let sent: Vec<ClientCommand> = rx.try_iter().collect();
+        assert!(
+            matches!(
+                sent[..],
+                [
+                    ClientCommand::SwapInvItem {
+                        src_slot: 23,
+                        dst_slot: 24
+                    },
+                    ClientCommand::SwapItem {
+                        dst_bag: 255,
+                        dst_slot: 23,
+                        src_bag: 19,
+                        src_slot: 2
+                    },
+                    ClientCommand::SplitItem {
+                        src_bag: 255,
+                        src_slot: 23,
+                        dst_bag: 20,
+                        dst_slot: 3,
+                        count: 5
+                    },
+                ]
+            ),
+            "{sent:?}"
+        );
     }
 }
 

@@ -270,6 +270,19 @@ pub struct ExtConsoleCommand {
     pub cvar: bool,
 }
 
+/// Move a bag item as the client's direct senders do, with no cursor and no client-side lock:
+/// a whole stack swaps with the destination (`CMSG_SWAP_INV_ITEM` within the player's own array,
+/// else `CMSG_SWAP_ITEM`), and `count` splits that many off (`CMSG_SPLIT_ITEM`). Bags and slots
+/// are the Lua ones: backpack 0, bags 1-4, bank -1, bank bags 5-10, keyring -2, slots 1-based.
+#[derive(Message, Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ExtItemMove {
+    pub src_bag: i64,
+    pub src_slot: u32,
+    pub dst_bag: i64,
+    pub dst_slot: u32,
+    pub count: Option<u32>,
+}
+
 /// Put text on the OS pasteboard, the one the edit boxes' copy and paste chords use.
 #[derive(Message, Clone, Debug, PartialEq, Eq)]
 pub struct ExtClipboard(pub String);
@@ -566,6 +579,7 @@ impl Plugin for ExtPlugin {
             .init_resource::<ExtSound>()
             .init_resource::<ExtConsole>()
             .add_message::<ExtClipboard>()
+            .add_message::<ExtItemMove>()
             .add_message::<ExtLootSend>()
             .init_resource::<ExtLoot>()
             .configure_sets(
