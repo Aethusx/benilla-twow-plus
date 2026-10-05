@@ -270,6 +270,10 @@ pub struct ExtConsoleCommand {
     pub cvar: bool,
 }
 
+/// Put text on the OS pasteboard, the one the edit boxes' copy and paste chords use.
+#[derive(Message, Clone, Debug, PartialEq, Eq)]
+pub struct ExtClipboard(pub String);
+
 /// The most entries [`ExtSound::opened`] holds; older ones drop.
 pub const EXT_SOUND_LOG_CAP: usize = 256;
 
@@ -561,6 +565,7 @@ impl Plugin for ExtPlugin {
             .init_resource::<ExtUnitTokens>()
             .init_resource::<ExtSound>()
             .init_resource::<ExtConsole>()
+            .add_message::<ExtClipboard>()
             .add_message::<ExtLootSend>()
             .init_resource::<ExtLoot>()
             .configure_sets(

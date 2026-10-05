@@ -24,8 +24,24 @@ impl Plugin for TextInputPlugin {
     fn build(&self, app: &mut App) {
         // Held for the whole run: on X11 dropping the handle clears the clipboard. `NonSend`: no
         // backend is `Sync`, and NSPasteboard is main-thread-only.
-        app.init_non_send_resource::<HostClipboard>();
+        app.init_non_send_resource::<HostClipboard>()
+            .add_message::<crate::ext::ExtClipboard>()
+            .add_systems(Update, write_ext_clipboard);
     }
+}
+
+/// A crate's [`crate::ext::ExtClipboard`] writes, onto the OS pasteboard the edit boxes use.
+fn write_ext_clipboard(
+    mut writes: MessageReader<crate::ext::ExtClipboard>,
+    window: Query<Option<&bevy::window::RawHandleWrapper>, With<bevy::window::PrimaryWindow>>,
+    mut clipboard: NonSendMut<HostClipboard>,
+) {
+    // The last write wins, as on the pasteboard itself.
+    let Some(text) = writes.read().last().map(|w| w.0.clone()) else {
+        return;
+    };
+    let handle = window.single().ok().flatten();
+    clipboard.write(wayland_display(handle), &text);
 }
 
 /// The modifier snapshot for this frame, read once and handed to every [`feed_key`] call.
