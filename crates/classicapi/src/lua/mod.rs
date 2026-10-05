@@ -17,6 +17,7 @@ mod addons;
 mod args;
 mod aura;
 mod baselib;
+pub(crate) mod bindings;
 mod color;
 pub(crate) mod console;
 mod container;
@@ -215,6 +216,7 @@ pub fn install(ca: &Ca, script: &mut UiScript) {
             quest::install(&api)?;
             console::install(&api)?;
             minor::install(&api)?;
+            bindings::install(&api)?;
             unit::install(&api)?;
             Ok(api.private)
         })();

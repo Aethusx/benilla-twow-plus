@@ -74,6 +74,8 @@ pub struct State {
     pub(crate) totems: lua::totem::Totems,
     /// `C_CVar`'s temporary values (`CVar::Temp`).
     pub(crate) temp_cvars: Vec<lua::cvar::Temp>,
+    /// The override binding layer (`Bindings::Api`).
+    pub(crate) overrides: lua::bindings::Overrides,
     /// The mouse buttons held and the clipboard writes (`Input::GlobalMouse`, `Clipboard::Copy`).
     pub(crate) input: lua::minor::Input,
     /// The console's list and queued lines (`Console::Commands`, `Console::Shell`).

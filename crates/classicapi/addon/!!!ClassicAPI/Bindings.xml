@@ -1,0 +1,13 @@
+<!-- ClassicAPI's own key bindings. The DLL splices these into the stock TARGETING section;
+     here they load as the addon's own Bindings.xml and list after the stock commands. -->
+<Bindings>
+	<Binding name="FOCUSTARGET">
+		FocusUnit("target");
+	</Binding>
+	<Binding name="TARGETFOCUS">
+		TargetUnit("focus");
+	</Binding>
+	<Binding name="AOELOOT">
+		C_Loot.LootAllCorpses()
+	</Binding>
+</Bindings>
