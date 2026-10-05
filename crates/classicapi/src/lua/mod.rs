@@ -37,6 +37,7 @@ pub(crate) mod lossofcontrol;
 pub(crate) mod luasyntax;
 mod macro_api;
 pub(crate) mod map;
+pub(crate) mod minor;
 pub(crate) mod misc;
 mod nameplate;
 mod playerinfo;
@@ -213,6 +214,7 @@ pub fn install(ca: &Ca, script: &mut UiScript) {
             loot::install(&api)?;
             quest::install(&api)?;
             console::install(&api)?;
+            minor::install(&api)?;
             unit::install(&api)?;
             Ok(api.private)
         })();

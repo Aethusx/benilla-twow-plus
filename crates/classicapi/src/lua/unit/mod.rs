@@ -5,7 +5,7 @@ use mlua::{Lua, Value};
 use super::Api;
 
 mod basic;
-mod body;
+pub(crate) mod body;
 mod flags;
 mod focus;
 pub(crate) mod identity;

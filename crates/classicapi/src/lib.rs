@@ -74,6 +74,8 @@ pub struct State {
     pub(crate) totems: lua::totem::Totems,
     /// `C_CVar`'s temporary values (`CVar::Temp`).
     pub(crate) temp_cvars: Vec<lua::cvar::Temp>,
+    /// The mouse buttons held and the clipboard writes (`Input::GlobalMouse`, `Clipboard::Copy`).
+    pub(crate) input: lua::minor::Input,
     /// The console's list and queued lines (`Console::Commands`, `Console::Shell`).
     pub(crate) console: lua::console::Console,
     /// `C_Loot`'s sends, walk and pending take, and `C_LootHistory`.
@@ -249,6 +251,8 @@ struct Inputs<'w, 's> {
     point: benilla_world::world_point::WorldPoint<'w, 's>,
     map: Option<Res<'w, benilla_world::world_map::CurrentMap>>,
     ext_loot: Res<'w, benilla_app::ext::ExtLoot>,
+    mouse: Option<Res<'w, bevy::input::ButtonInput<bevy::input::mouse::MouseButton>>>,
+    clipboard: MessageWriter<'w, benilla_app::ext::ExtClipboard>,
 }
 
 /// The frame: mirror the world, then fire the events the net handlers and the natives queued.
@@ -278,6 +282,8 @@ fn frame(
         point,
         map,
         ext_loot,
+        mouse,
+        mut clipboard,
     } = inputs;
     let now = Instant::now();
     let mut lap = prof::Lap::new();
@@ -360,6 +366,26 @@ fn frame(
         st.mirror.map_id = map.as_deref().map_or(0, |m| m.0);
         st.mirror.area = point.area();
         st.console.sync(&mut ext_console);
+        // `GLOBAL_MOUSE_DOWN`/`GLOBAL_MOUSE_UP(button)` per edge, UI hit or not.
+        let held = mouse.as_deref().map_or(0, |m| {
+            use bevy::input::mouse::MouseButton as B;
+            [B::Left, B::Right, B::Middle, B::Back, B::Forward]
+                .iter()
+                .enumerate()
+                .filter(|(_, b)| m.pressed(**b))
+                .fold(0u8, |acc, (i, _)| acc | 1 << i)
+        });
+        for (button, down) in st.input.mouse(held) {
+            let event = if down {
+                "GLOBAL_MOUSE_DOWN"
+            } else {
+                "GLOBAL_MOUSE_UP"
+            };
+            st.emit(event, vec![ScriptValue::Str(button.to_string())]);
+        }
+        for text in std::mem::take(&mut st.input.clipboard) {
+            clipboard.write(benilla_app::ext::ExtClipboard(text));
+        }
         // `C_Loot`'s walk and pending take; `LOOT_SCAN_COMPLETED` when a walk ends.
         let State { loot, mirror, .. } = &mut *st;
         let (sends, walked) = loot.tick(&ext_loot, mirror, now);
