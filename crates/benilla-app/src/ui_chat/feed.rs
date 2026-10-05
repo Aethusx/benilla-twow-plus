@@ -751,6 +751,7 @@ pub(super) fn feed_chat(
                             String::new()
                         }
                     }),
+                    sender_guid: msg.sender_guid,
                     // The effective language, not the wire's: narration types and GM mode force
                     // 0, which also drops the `[Language]` header.
                     language: language_name(language).to_string(),

@@ -32,6 +32,14 @@ impl UiScript {
         fire_event_into(&self.lua, event, args);
     }
 
+    /// [`Self::fire_event`] for a chat line: `sender_guid` is the current chat guid while it
+    /// dispatches (`GetCurrentChatGUID`), 0 for a line no player sent.
+    pub fn fire_chat_event(&mut self, event: &str, args: Vec<ScriptValue>, sender_guid: u64) {
+        let saved = std::mem::replace(&mut self.model_mut().chat_guid, sender_guid);
+        fire_event_into(&self.lua, event, args);
+        self.model_mut().chat_guid = saved;
+    }
+
     /// Whether any frame registered `event` by name; a `RegisterAllEvents` frame does not count.
     pub fn has_event_registrations(&self, event: &str) -> bool {
         self.model_mut()

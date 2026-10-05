@@ -37,7 +37,7 @@ pub(crate) fn route(
     }) {
         windows.logs.record(kind.is_combat_log(), &line);
     }
-    script.fire_event(event_name(kind), event.script_args());
+    script.fire_chat_event(event_name(kind), event.script_args(), event.sender_guid);
 }
 
 /// `ChatFrame_OnEvent`'s composition (`ChatFrame.lua:1369-1468`); `None` for a notice the 1.12 UI

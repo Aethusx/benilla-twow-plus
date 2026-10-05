@@ -587,3 +587,24 @@ pub fn enable_click_bracket(lua: &Lua) {
 pub fn mouse_button_clicked(lua: &Lua) -> Option<String> {
     lua.app_data_ref::<Model>()?.clicked_button.clone()
 }
+
+/// The sender guid of the `CHAT_MSG_*` dispatch running now; `None` outside one or for a line no
+/// player sent.
+pub fn current_chat_guid(lua: &Lua) -> Option<u64> {
+    lua.app_data_ref::<Model>()
+        .map(|m| m.chat_guid)
+        .filter(|g| *g != 0)
+}
+
+/// The frames registered for `event` by `RegisterEvent`, in registration order, as ids.
+pub fn frames_registered_for_event(lua: &Lua, event: &str) -> Vec<u32> {
+    let Some(m) = lua.app_data_ref::<Model>() else {
+        return Vec::new();
+    };
+    m.event_to_frames
+        .get(event)
+        .into_iter()
+        .flatten()
+        .filter_map(|h| m.frame_to_id.get(h).copied())
+        .collect()
+}

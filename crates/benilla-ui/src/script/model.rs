@@ -941,6 +941,9 @@ pub(crate) struct Model {
     pub(crate) cursor_pos: (f32, f32),
     /// A crate's `PreClick`/`PostClick` bracket around a button's `OnClick` (off by default).
     pub(crate) click_bracket: bool,
+    /// The sender guid of the `CHAT_MSG_*` dispatch running now, 0 outside one or for a line no
+    /// player sent; for a crate's `GetCurrentChatGUID`.
+    pub(crate) chat_guid: u64,
     /// The mouse button of the innermost click, double click or mouse press/release dispatch
     /// running now, for a crate's `GetMouseButtonClicked`; `None` outside one.
     pub(crate) clicked_button: Option<String>,
@@ -1464,6 +1467,7 @@ impl Model {
             pending_events: Vec::new(),
             cursor_pos: (0.0, 0.0),
             click_bracket: false,
+            chat_guid: 0,
             clicked_button: None,
             minimap_ping_request: None,
             minimap_ping: (0.0, 0.0),

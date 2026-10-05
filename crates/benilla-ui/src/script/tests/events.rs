@@ -330,3 +330,35 @@ fn an_all_events_listener_runs_after_the_events_own() {
     assert_eq!(s.eval::<String>("return order[2]").unwrap(), "all");
     assert_eq!(s.eval::<i64>("return table.getn(order)").unwrap(), 2);
 }
+
+/// The crate views over dispatch: a chat line's sender guid while its `CHAT_MSG_*` runs and 0
+/// after, and the frames registered for an event in registration order.
+#[test]
+fn a_chat_line_carries_its_sender_and_the_registered_frames_list() {
+    let mut s = crate::script::tests::common::script();
+    let probe = s
+        .lua()
+        .create_function(|lua, ()| Ok(crate::script::ext_read::current_chat_guid(lua)))
+        .unwrap();
+    s.lua().globals().set("ChatGuid", probe).unwrap();
+    s.run(
+        r#"
+        Seen = "none"
+        A = CreateFrame("Frame", "A"); A:RegisterEvent("CHAT_MSG_SAY")
+        B = CreateFrame("Frame", "B"); B:RegisterEvent("CHAT_MSG_SAY")
+        A:SetScript("OnEvent", function() Seen = tostring(ChatGuid()) end)
+        "#,
+    )
+    .unwrap();
+    s.fire_chat_event("CHAT_MSG_SAY", vec![], 0x42);
+    assert_eq!(s.eval::<String>("return Seen").unwrap(), "66");
+    assert_eq!(crate::script::ext_read::current_chat_guid(s.lua()), None);
+    let ids = crate::script::ext_read::frames_registered_for_event(s.lua(), "CHAT_MSG_SAY");
+    assert_eq!(ids.len(), 2);
+    let first = crate::script::ext_read::frame_value(s.lua(), ids[0]);
+    let mlua::Value::Table(t) = first else {
+        panic!("frame")
+    };
+    let name: String = mlua::ObjectLike::call_method(&t, "GetName", ()).unwrap();
+    assert_eq!(name, "A");
+}

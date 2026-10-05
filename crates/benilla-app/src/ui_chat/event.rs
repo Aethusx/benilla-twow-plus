@@ -314,6 +314,8 @@ pub(crate) struct ChatEvent {
     pub kind: Option<ChatEventKind>,
     pub text: String,
     pub sender: String,
+    /// The sending player's guid, 0 for a line no player sent.
+    pub sender_guid: u64,
     pub language: String,
     pub channel: String,
     pub target: String,
